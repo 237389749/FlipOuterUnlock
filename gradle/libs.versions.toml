@@ -10,5 +10,5 @@ libxposed-service = { group = "io.github.libxposed", name = "service", version.r
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 lsplugin-apksign = { id = "org.lsposed.lsplugin.apksign", version = "1.4" }
