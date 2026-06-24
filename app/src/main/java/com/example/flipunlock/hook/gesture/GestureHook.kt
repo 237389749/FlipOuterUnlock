@@ -47,18 +47,6 @@ object GestureHook : BaseHook() {
                 })
                 log("GestureFix: hooked FlipLauncher.onResume")
             }
-
-            // Prevent onDestroy from clearing launcher reference
-            // (FlipApplication.setLauncher -> BaseGestureImpl.setLauncher chain)
-            // This hook is defensive; the actual gesture engine works without it.
-            runCatching {
-                val onDestroyMethod = flipLauncherClass.method("onDestroy")
-                hook(onDestroyMethod, Hooker { chain ->
-                    // Let cleanup proceed but survive
-                    chain.proceed()
-                })
-                log("GestureFix: hooked FlipLauncher.onDestroy")
-            }
         }.onFailure { log("GestureFix: failed hook FlipLauncher", it) }
     }
 
