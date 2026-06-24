@@ -1,84 +1,43 @@
 package com.example.flipunlock.hook.gesture
 
-import android.content.Intent
-import android.view.View
-import android.view.ViewGroup
-import android.view.WindowManager
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
- * Hook fliphome: replace the FlipLauncher desktop with the inner screen launcher
- * (com.miui.home) while keeping the gesture engine alive.
+ * Hook fliphome to ensure the gesture engine (TouchInteractionService +
+ * BaseGestureImpl) stays alive and active, regardless of FlipLauncher state.
  *
- * Approach:
- * 1. Let FlipLauncher create normally (gesture callbacks fire, InputMonitor registers)
- * 2. In onResume, clear its content and make the window minimal
- * 3. Launch the inner screen launcher on top
- * 4. Force gesture engine to stay enabled
+ * This hook does NOT modify FlipLauncher itself. The user should switch
+ * the default home activity separately (e.g. via LSPosed scope or
+ * `cmd package set-home-activity`).
+ *
+ * Gesture engine initialization chain (from reverse engineering):
+ *   FlipApplication.attachBaseContext() → new BaseGestureImpl
+ *   FlipApplication.onCreate() → BaseGestureImpl.init()
+ *     → GestureInputHelper.initInputMonitor("swipe-up", displayId, ctx)
+ *     → InputMonitor registered independently of FlipLauncher
+ *   TouchInteractionService.onSystemUiFlagsChanged()
+ *     → BaseGestureImpl.onSystemUiFlagsChanged()
+ *
+ * Hooks applied:
+ * 1. Block TouchInteractionService.onDestroy → keep service alive
+ * 2. Force BaseGestureImpl.enableGestureInput → always setEnable(true)
+ * 3. Block BaseGestureImpl.disableGestureInput → prevent gesture loss
+ * 4. Hook onDisplayFoldChanged → force registerInputConsumer when folded
  */
 object GestureHook : BaseHook() {
     override val targetPackages = listOf("com.miui.fliphome")
 
     override fun setupHooks(param: PackageReadyParam) {
-        replaceFlipLauncherWithInnerLauncher(param)
         keepTouchInteractionServiceAlive(param)
         forceGestureEnabled(param)
     }
 
-    // ── 1. Replace FlipLauncher content with inner launcher ───────────────
-    private fun replaceFlipLauncherWithInnerLauncher(param: PackageReadyParam) {
-        runCatching {
-            val flipLauncherClass = param.classLoader.findClass("com.miui.fliphome.FlipLauncher")
-
-            // Hook onResume: replace content and start inner launcher
-            runCatching {
-                val onResumeMethod = flipLauncherClass.method("onResume")
-                hook(onResumeMethod, after { chain, result ->
-                    val launcher = chain.thisObject as? android.app.Activity
-                        ?: return@after result
-
-                    // Make FlipLauncher window invisible
-                    launcher.window?.apply {
-                        // Remove all content
-                        decorView?.let { decor ->
-                            (decor as? ViewGroup)?.removeAllViews()
-                            decor.setBackgroundColor(0x00000000)
-                            decor.visibility = View.GONE
-                        }
-                        // Make window minimal — 1x1 pixel in corner
-                        val lp = attributes
-                        lp.width = 1
-                        lp.height = 1
-                        lp.x = 0
-                        lp.y = 0
-                        lp.alpha = 0f
-                        lp.flags = lp.flags or
-                            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        attributes = lp
-                    }
-
-                    // Start inner screen launcher on top
-                    runCatching {
-                        val intent = Intent(Intent.ACTION_MAIN).apply {
-                            addCategory(Intent.CATEGORY_HOME)
-                            setPackage("com.miui.home")
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        launcher.startActivity(intent)
-                        log("GestureFix: launched inner launcher")
-                    }.onFailure { log("GestureFix: failed to launch inner launcher", it) }
-
-                    result
-                })
-                log("GestureFix: hooked FlipLauncher.onResume")
-            }
-        }.onFailure { log("GestureFix: failed hook FlipLauncher", it) }
-    }
-
-    // ── 2. Keep TouchInteractionService alive ───────────────────────────
+    // ── 1. Keep TouchInteractionService alive ───────────────────────────
+    // This service bridges SystemUI gesture state to BaseGestureImpl.
+    // The system binds it as QUICKSTEP_SERVICE. Prevent onDestroy so it
+    // never gets killed even if FlipLauncher is removed.
     private fun keepTouchInteractionServiceAlive(param: PackageReadyParam) {
         runCatching {
             val serviceClass = param.classLoader.findClass(
@@ -90,7 +49,12 @@ object GestureHook : BaseHook() {
         }.onFailure { log("GestureFix: failed hook TouchInteractionService", it) }
     }
 
-    // ── 3. Force gesture input enabled ───────────────────────────────────
+    // ── 2. Force gesture input always enabled ────────────────────────────
+    // enableGestureInput has guard conditions:
+    //   mGestureInputHelper != null && mIsFolded
+    //   && !isStatusBarExpand && isUserSwitched
+    // We force setEnable(true) after every call to enableGestureInput,
+    // and block disableGestureInput entirely.
     private fun forceGestureEnabled(param: PackageReadyParam) {
         runCatching {
             val baseGestureImplClass = param.classLoader.findClass(
@@ -110,14 +74,15 @@ object GestureHook : BaseHook() {
                 log("GestureFix: force-enabled BaseGestureImpl.enableGestureInput")
             }
 
-            // Block disableGestureInput entirely
+            // Block disableGestureInput completely
             runCatching {
                 val disableMethod = baseGestureImplClass.method("disableGestureInput")
                 hook(disableMethod, replaceResult(null))
                 log("GestureFix: blocked BaseGestureImpl.disableGestureInput")
             }
 
-            // Force registerInputConsumer when folded
+            // Force registerInputConsumer when phone is folded
+            // (normally called in onDisplayFoldChanged(true))
             runCatching {
                 val onFoldChanged = baseGestureImplClass.method(
                     "onDisplayFoldChanged", Boolean::class.javaPrimitiveType!!
