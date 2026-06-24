@@ -1,0 +1,84 @@
+Run echo 'org.gradle.caching=true' >> ~/.gradle/gradle.properties
+Downloading https://services.gradle.org/distributions/gradle-9.5.0-bin.zip
+.............10%.............20%..............30%.............40%.............50%..............60%.............70%..............80%.............90%.............100%
+
+Welcome to Gradle 9.5.0!
+
+Here are the highlights of this release:
+ - Task provenance in reports and failure messages
+ - Type-safe accessors for precompiled Kotlin Settings plugins
+
+For more details see https://docs.gradle.org/9.5.0/release-notes.html
+
+Starting a Gradle Daemon (subsequent builds will be faster)
+
+> Configure project :app
+Apksign fallbacks to use debug singature as null does not exist
+
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:generateDebugBuildConfig
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:processDebugNavigationResources
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:javaPreCompileDebug
+> Task :app:mergeDebugAssets
+> Task :app:compressDebugAssets
+> Task :app:desugarDebugFileDependencies
+> Task :app:parseDebugLocalResources
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugRFile
+> Task :app:compileDebugNavigationResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:mergeDebugResources
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :app:checkDebugDuplicateClasses
+> Task :app:mergeDebugJniLibFolders
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/ActivityLifecycleHook.kt:29:84 Unresolved reference 'result'.
+
+> Task :app:compileDebugKotlin
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/ActivityLifecycleHook.kt:37:23 Unresolved reference 'result'.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/ActivityLifecycleHook.kt:48:84 Unresolved reference 'result'.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/ActivityLifecycleHook.kt:50:23 Unresolved reference 'result'.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/CutoutHook.kt:34:34 Unresolved reference 'result'.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/CutoutHook.kt:34:63 Unresolved reference 'result'.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/CutoutHook.kt:35:83 Unresolved reference 'result'.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/CutoutHook.kt:45:23 Unresolved reference 'result'.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/WatchOverlayHook.kt:40:23 Unresolved reference 'result'.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/WatchOverlayHook.kt:58:80 Unresolved reference 'result'.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/WatchOverlayHook.kt:61:27 Unresolved reference 'result'.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/WatchOverlayHook.kt:69:80 Unresolved reference 'result'.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/WatchOverlayHook.kt:77:27 Unresolved reference 'result'.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/WatchOverlayHook.kt:96:66 Argument type mismatch: actual type is 'Class<Int>?', but 'Class<*>' was expected.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/WatchOverlayHook.kt:109:78 Argument type mismatch: actual type is 'Class<Int>?', but 'Class<*>' was expected.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/WatchOverlayHook.kt:130:80 Unresolved reference 'result'.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/WatchOverlayHook.kt:137:27 Unresolved reference 'result'.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/WatchOverlayHook.kt:155:38 Argument type mismatch: actual type is 'Class<Int>?', but 'Class<*>' was expected.
+e: file:///home/runner/work/FlipOuterUnlock/FlipOuterUnlock/app/src/main/java/com/example/flipunlock/hook/WatchOverlayHook.kt:155:68 Argument type mismatch: actual type is 'Class<Boolean>?', but 'Class<*>' was expected.
+
+> Task :app:compileDebugKotlin FAILED
+> Task :app:processDebugManifestForPackage
+> Task :app:mergeExtDexDebug
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1782276328805.json
+
+23 actionable tasks: 23 executed
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileDebugKotlin' (registered by plugin 'com.android.internal.application').
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.btapi.BuildToolsApiCompilationWork
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 1m 24s
+Error: Process completed with exit code 1.

@@ -29,7 +29,7 @@ object WatchOverlayHook : BaseHook() {
             val checkMethod = runnableClass.method(
                 "checkShouldHideWidget", PackageManager::class.java, ComponentName::class.java
             )
-            hook(checkMethod, after { chain, _ ->
+            hook(checkMethod, after { chain, result ->
                 runCatching {
                     val runnable = chain.thisObject
                     val window = runnable.getField("this$0") ?: return@runCatching
@@ -37,7 +37,7 @@ object WatchOverlayHook : BaseHook() {
                     window.callMethod("refreshWindow", 2, true)
                     log("WatchOverlayWindow forced hidden")
                 }.onFailure { log("error in checkShouldHideWidget", it) }
-                chain.result
+                result
             })
             log("hooked CheckAppConfigRunnable.checkShouldHideWidget")
         }.onFailure { log("failed to hook CheckAppConfigRunnable", it) }
@@ -54,19 +54,19 @@ object WatchOverlayHook : BaseHook() {
             val constructor = clazz.declaredConstructors.firstOrNull()
             if (constructor != null) {
                 constructor.isAccessible = true
-                hook(constructor, after { chain, _ ->
-                    val view = chain.thisObject as? View ?: return@after chain.result
+                hook(constructor, after { chain, result ->
+                    val view = chain.thisObject as? View ?: return@after result
                     setNotTouchableAndGone(view)
                     log("WatchOverlayGroupView constructor -> GONE & NOT_TOUCHABLE")
-                    chain.result
+                    result
                 })
             }
 
             // 2.2 init method
             runCatching {
                 val initMethod = clazz.method("init")
-                hook(initMethod, after { chain, _ ->
-                    val view = chain.thisObject as? View ?: return@after chain.result
+                hook(initMethod, after { chain, result ->
+                    val view = chain.thisObject as? View ?: return@after result
                     setNotTouchableAndGone(view)
                     runCatching {
                         val pager = view.getField("mPagerView") as? View
@@ -74,7 +74,7 @@ object WatchOverlayHook : BaseHook() {
                         pager?.visibility = View.GONE
                     }
                     log("WatchOverlayGroupView init -> GONE & NOT_TOUCHABLE")
-                    chain.result
+                    result
                 })
             }
 
@@ -93,7 +93,7 @@ object WatchOverlayHook : BaseHook() {
 
             // 2.5 setVisibility
             runCatching {
-                val setVisMethod = clazz.method("setVisibility", Int::class.javaPrimitiveType)
+                val setVisMethod = clazz.method("setVisibility", Int::class.javaPrimitiveType!!)
                 hook(setVisMethod, Hooker { chain ->
                     val visibility = chain.args[0] as Int
                     if (visibility == View.VISIBLE) {
@@ -106,7 +106,7 @@ object WatchOverlayHook : BaseHook() {
 
             // 2.6 updateLayoutByOrientation
             runCatching {
-                val updateMethod = clazz.method("updateLayoutByOrientation", Int::class.javaPrimitiveType)
+                val updateMethod = clazz.method("updateLayoutByOrientation", Int::class.javaPrimitiveType!!)
                 hook(updateMethod, Hooker { chain ->
                     val view = chain.thisObject as? View
                     if (view != null) {
@@ -126,15 +126,15 @@ object WatchOverlayHook : BaseHook() {
             // 2.7 onAttachedToWindow
             runCatching {
                 val attachMethod = clazz.method("onAttachedToWindow")
-                hook(attachMethod, after { chain, _ ->
-                    val view = chain.thisObject as? View ?: return@after chain.result
+                hook(attachMethod, after { chain, result ->
+                    val view = chain.thisObject as? View ?: return@after result
                     view.visibility = View.GONE
                     setNotTouchableAndGone(view)
                     runCatching {
                         val wm = view.context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
                         wm.removeViewImmediate(view)
                     }
-                    chain.result
+                    result
                 })
             }
 
@@ -152,7 +152,7 @@ object WatchOverlayHook : BaseHook() {
             // 3.1 refreshWindow: ADD -> REMOVE
             runCatching {
                 val refreshMethod = watchWindowClass.method(
-                    "refreshWindow", Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType
+                    "refreshWindow", Int::class.javaPrimitiveType!!, Boolean::class.javaPrimitiveType!!
                 )
                 hook(refreshMethod, Hooker { chain ->
                     val action = chain.args[0] as Int

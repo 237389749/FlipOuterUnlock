@@ -25,8 +25,8 @@ object ActivityLifecycleHook : BaseHook() {
         runCatching {
             val onCreateMethod = Activity::class.java.getDeclaredMethod("onCreate", Bundle::class.java)
             onCreateMethod.isAccessible = true
-            hook(onCreateMethod, after { chain, _ ->
-                val activity = chain.thisObject as? Activity ?: return@after chain.result
+            hook(onCreateMethod, after { chain, result ->
+                val activity = chain.thisObject as? Activity ?: return@after result
                 runCatching {
                     val attrs = activity.window?.attributes ?: return@runCatching
                     if (attrs.layoutInDisplayCutoutMode != WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS) {
@@ -34,7 +34,7 @@ object ActivityLifecycleHook : BaseHook() {
                         activity.window?.attributes = attrs
                     }
                 }.onFailure { log("error setting cutout mode", it) }
-                chain.result
+                result
             })
             log("hooked Activity.onCreate")
         }.onFailure { log("failed to hook Activity.onCreate", it) }
@@ -44,10 +44,10 @@ object ActivityLifecycleHook : BaseHook() {
         runCatching {
             val onResumeMethod = Activity::class.java.getDeclaredMethod("onResume")
             onResumeMethod.isAccessible = true
-            hook(onResumeMethod, after { chain, _ ->
-                val activity = chain.thisObject as? Activity ?: return@after chain.result
+            hook(onResumeMethod, after { chain, result ->
+                val activity = chain.thisObject as? Activity ?: return@after result
                 hideSystemBars(activity)
-                chain.result
+                result
             })
             log("hooked Activity.onResume")
         }.onFailure { log("failed to hook Activity.onResume", it) }

@@ -30,9 +30,9 @@ object CutoutHook : BaseHook() {
         runCatching {
             val parserClass = param.classLoader.findClass("android.view.CutoutSpecification\$Parser")
             val parseMethod = parserClass.method("parse", String::class.java)
-            hook(parseMethod, after { chain, _ ->
-                val spec = chain.result ?: return@after chain.result
-                val originalSpec = chain.args[0] as? String ?: return@after chain.result
+            hook(parseMethod, after { chain, result ->
+                val spec = result ?: return@after result
+                val originalSpec = chain.args[0] as? String ?: return@after result
                 if (originalSpec.contains("M 604,664") || originalSpec.contains("@bind_right_cutout")) {
                     spec.setField("mLeftBound", Rect(0, 0, 0, 0))
                     spec.setField("mTopBound", Rect(0, 0, 0, 0))
@@ -42,7 +42,7 @@ object CutoutHook : BaseHook() {
                     spec.setField("mPath", Path())
                     log("CutoutFix: cleared outer display cutout in parser")
                 }
-                chain.result
+                result
             })
         }.onFailure { log("CutoutFix: failed hook parser", it) }
     }
