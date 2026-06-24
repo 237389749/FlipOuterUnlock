@@ -3,6 +3,7 @@ package com.example.flipunlock
 import com.example.flipunlock.hook.ActivityLifecycleHook
 import com.example.flipunlock.hook.CutoutHook
 import com.example.flipunlock.hook.WatchOverlayHook
+import com.example.flipunlock.hook.gesture.GestureHook
 import com.example.flipunlock.hook.system.InputMethodHook
 import com.example.flipunlock.hook.system.InterceptHook
 import com.example.flipunlock.hook.system.SystemServicesHook
@@ -17,6 +18,7 @@ class Main : XposedModule() {
 
     private val hooks = listOf(
         CutoutHook,
+        GestureHook,
         ActivityLifecycleHook,
         WatchOverlayHook,
     )
