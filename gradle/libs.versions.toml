@@ -1,6 +1,5 @@
 [versions]
 agp = "9.1.1"
-kotlin = "2.3.21"
 xposed-api = "101.0.1"
 xposed-service = "101.0.0"
 
@@ -10,5 +9,4 @@ libxposed-service = { group = "io.github.libxposed", name = "service", version.r
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 lsplugin-apksign = { id = "org.lsposed.lsplugin.apksign", version = "1.4" }
