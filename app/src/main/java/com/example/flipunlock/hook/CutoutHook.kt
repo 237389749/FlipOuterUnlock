@@ -37,6 +37,7 @@ object CutoutHook : BaseHook() {
         runCatching {
             val parserClass = classLoader.findClass("android.view.CutoutSpecification\$Parser")
             val parseMethod = parserClass.method("parse", String::class.java)
+            // afterHookedMethod: modify parse result in-place
             hook(parseMethod, after { chain, result ->
                 val spec = result ?: return@after result
                 val originalSpec = chain.args[0] as? String ?: return@after result
@@ -47,7 +48,6 @@ object CutoutHook : BaseHook() {
                     spec.setField("mBottomBound", Rect(0, 0, 0, 0))
                     spec.setField("mInsets", Insets.of(0, 0, 0, 0))
                     spec.setField("mPath", Path())
-                    log("CutoutFix: cleared outer display cutout in parser")
                 }
                 result
             })
@@ -57,10 +57,15 @@ object CutoutHook : BaseHook() {
     private fun hookDisplayGetCutout() {
         runCatching {
             val getCutoutMethod = Display::class.java.method("getCutout")
-            hook(getCutoutMethod, Hooker {
-                getZeroCutout() ?: it.proceed()
+            // beforeHookedMethod: replace result with zero cutout, or proceed if unavailable
+            hook(getCutoutMethod, Hooker { chain ->
+                val zero = getZeroCutout()
+                if (zero != null) {
+                    zero
+                } else {
+                    chain.proceed()
+                }
             })
-            log("CutoutFix: hooked Display.getCutout")
         }.onFailure { log("CutoutFix: failed hook Display.getCutout", it) }
     }
 
@@ -74,7 +79,6 @@ object CutoutHook : BaseHook() {
                 "getCutoutPosition", android.content.Context::class.java
             )
             hook(getCutoutPositionMethod, replaceResult(noneDirection))
-            log("CutoutFix: hooked DisplayUtils.getCutoutPosition → always NONE")
         }.onFailure { log("CutoutFix: failed hook DisplayUtils", it) }
     }
 
