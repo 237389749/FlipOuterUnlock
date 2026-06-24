@@ -26,6 +26,7 @@ class Main : XposedModule() {
     }
 
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
+        CutoutHook.hookFramework(param)
         SystemServicesHook.hook(param)
         InputMethodHook.hook(param)
         InterceptHook.hook(param)

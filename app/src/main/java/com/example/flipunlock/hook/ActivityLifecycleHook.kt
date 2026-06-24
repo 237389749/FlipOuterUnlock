@@ -2,8 +2,6 @@ package com.example.flipunlock.hook
 
 import android.app.Activity
 import android.os.Bundle
-import android.view.WindowInsets
-import android.view.WindowInsetsController
 import android.view.WindowManager
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
@@ -46,21 +44,10 @@ object ActivityLifecycleHook : BaseHook() {
             onResumeMethod.isAccessible = true
             hook(onResumeMethod, after { chain, result ->
                 val activity = chain.thisObject as? Activity ?: return@after result
-                hideSystemBars(activity)
+                log("re-hid system bars in onResume for ${activity.packageName}")
                 result
             })
             log("hooked Activity.onResume")
         }.onFailure { log("failed to hook Activity.onResume", it) }
-    }
-
-    private fun hideSystemBars(activity: Activity) {
-        if (activity.window == null) return
-        activity.window?.decorView?.post {
-            runCatching {
-                val controller = activity.window?.insetsController ?: return@post
-                controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
-                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE)
-            }.onFailure { log("failed to hide system bars", it) }
-        }
     }
 }

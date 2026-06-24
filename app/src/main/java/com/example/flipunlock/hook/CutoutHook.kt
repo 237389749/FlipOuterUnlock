@@ -8,11 +8,11 @@ import android.view.DisplayCutout
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
+import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 import java.util.Collections
 
 object CutoutHook : BaseHook() {
     override val targetPackages = listOf(
-        "android",
         "com.android.systemui",
         "com.miui.aod",
         "com.android.camera",
@@ -20,15 +20,22 @@ object CutoutHook : BaseHook() {
 
     private var zeroCutout: DisplayCutout? = null
 
+    fun hookFramework(param: SystemServerStartingParam) {
+        safeHook("CutoutHook-framework") {
+            hookCutoutParser(param.classLoader)
+            hookDisplayGetCutout()
+        }
+    }
+
     override fun setupHooks(param: PackageReadyParam) {
-        hookCutoutParser(param)
+        hookCutoutParser(param.classLoader)
         hookDisplayGetCutout()
         hookDisplayUtilsGetCutoutPosition(param)
     }
 
-    private fun hookCutoutParser(param: PackageReadyParam) {
+    private fun hookCutoutParser(classLoader: ClassLoader) {
         runCatching {
-            val parserClass = param.classLoader.findClass("android.view.CutoutSpecification\$Parser")
+            val parserClass = classLoader.findClass("android.view.CutoutSpecification\$Parser")
             val parseMethod = parserClass.method("parse", String::class.java)
             hook(parseMethod, after { chain, result ->
                 val spec = result ?: return@after result
