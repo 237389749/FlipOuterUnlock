@@ -1,43 +1,77 @@
 package com.example.flipunlock.hook.gesture
 
+import android.content.ComponentName
+import android.content.pm.PackageManager
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
- * Hook fliphome to ensure the gesture engine (TouchInteractionService +
- * BaseGestureImpl) stays alive and active, regardless of FlipLauncher state.
+ * Hook fliphome to:
+ * 1. Disable FlipLauncher (outer screen desktop) so the system falls back
+ *    to the inner screen launcher (com.miui.home)
+ * 2. Keep the gesture engine (TouchInteractionService + BaseGestureImpl)
+ *    alive and active
  *
- * This hook does NOT modify FlipLauncher itself. The user should switch
- * the default home activity separately (e.g. via LSPosed scope or
- * `cmd package set-home-activity`).
+ * Disabling via PackageManager.setComponentEnabledSetting with DONT_KILL_APP
+ * keeps the fliphome process alive (TouchInteractionService still runs as
+ * QUICKSTEP_SERVICE) while hiding FlipLauncher from the system's home
+ * activity resolution.
  *
- * Gesture engine initialization chain (from reverse engineering):
+ * Gesture engine initialization (from reverse engineering):
  *   FlipApplication.attachBaseContext() → new BaseGestureImpl
  *   FlipApplication.onCreate() → BaseGestureImpl.init()
  *     → GestureInputHelper.initInputMonitor("swipe-up", displayId, ctx)
  *     → InputMonitor registered independently of FlipLauncher
- *   TouchInteractionService.onSystemUiFlagsChanged()
- *     → BaseGestureImpl.onSystemUiFlagsChanged()
- *
- * Hooks applied:
- * 1. Block TouchInteractionService.onDestroy → keep service alive
- * 2. Force BaseGestureImpl.enableGestureInput → always setEnable(true)
- * 3. Block BaseGestureImpl.disableGestureInput → prevent gesture loss
- * 4. Hook onDisplayFoldChanged → force registerInputConsumer when folded
  */
 object GestureHook : BaseHook() {
     override val targetPackages = listOf("com.miui.fliphome")
 
+    private var launcherDisabled = false
+
     override fun setupHooks(param: PackageReadyParam) {
+        disableFlipLauncher(param)
         keepTouchInteractionServiceAlive(param)
         forceGestureEnabled(param)
     }
 
-    // ── 1. Keep TouchInteractionService alive ───────────────────────────
-    // This service bridges SystemUI gesture state to BaseGestureImpl.
-    // The system binds it as QUICKSTEP_SERVICE. Prevent onDestroy so it
-    // never gets killed even if FlipLauncher is removed.
+    // ── 1. Disable FlipLauncher via PackageManager ────────────────────────
+    // Called from fliphome's own process, so we have permission to disable
+    // our own component. DONT_KILL_APP keeps the process alive.
+    private fun disableFlipLauncher(param: PackageReadyParam) {
+        if (launcherDisabled) return
+        runCatching {
+            val flipAppClass = param.classLoader.findClass(
+                "com.miui.fliphome.FlipApplication"
+            )
+            // Hook onCreate which runs early — before FlipLauncher is created
+            val onCreateMethod = flipAppClass.method("onCreate")
+            hook(onCreateMethod, after { chain, result ->
+                if (launcherDisabled) return@after
+                runCatching {
+                    val app = chain.thisObject
+                    val ctx = app.callMethod("getApplicationContext") as? android.content.Context
+                        ?: return@runCatching
+                    val component = ComponentName("com.miui.fliphome", "com.miui.fliphome.FlipLauncher")
+                    val pm = ctx.packageManager
+                    val currentState = pm.getComponentEnabledSetting(component)
+                    if (currentState != PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
+                        pm.setComponentEnabledSetting(
+                            component,
+                            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                            PackageManager.DONT_KILL_APP
+                        )
+                        launcherDisabled = true
+                        log("GestureFix: disabled FlipLauncher, keeping process alive")
+                    }
+                }.onFailure { log("GestureFix: failed to disable FlipLauncher", it) }
+                result
+            })
+            log("GestureFix: hooked FlipApplication.onCreate for launcher disable")
+        }.onFailure { log("GestureFix: failed hook FlipApplication", it) }
+    }
+
+    // ── 2. Keep TouchInteractionService alive ───────────────────────────
     private fun keepTouchInteractionServiceAlive(param: PackageReadyParam) {
         runCatching {
             val serviceClass = param.classLoader.findClass(
@@ -49,19 +83,14 @@ object GestureHook : BaseHook() {
         }.onFailure { log("GestureFix: failed hook TouchInteractionService", it) }
     }
 
-    // ── 2. Force gesture input always enabled ────────────────────────────
-    // enableGestureInput has guard conditions:
-    //   mGestureInputHelper != null && mIsFolded
-    //   && !isStatusBarExpand && isUserSwitched
-    // We force setEnable(true) after every call to enableGestureInput,
-    // and block disableGestureInput entirely.
+    // ── 3. Force gesture input always enabled ────────────────────────────
     private fun forceGestureEnabled(param: PackageReadyParam) {
         runCatching {
             val baseGestureImplClass = param.classLoader.findClass(
                 "com.miui.fliphome.gesture.BaseGestureImpl"
             )
 
-            // After enableGestureInput, force setEnable(true)
+            // After enableGestureInput, force setEnable(true) regardless of guards
             runCatching {
                 val enableMethod = baseGestureImplClass.method("enableGestureInput")
                 hook(enableMethod, after { chain, result ->
@@ -81,8 +110,7 @@ object GestureHook : BaseHook() {
                 log("GestureFix: blocked BaseGestureImpl.disableGestureInput")
             }
 
-            // Force registerInputConsumer when phone is folded
-            // (normally called in onDisplayFoldChanged(true))
+            // Force registerInputConsumer when folded
             runCatching {
                 val onFoldChanged = baseGestureImplClass.method(
                     "onDisplayFoldChanged", Boolean::class.javaPrimitiveType!!
