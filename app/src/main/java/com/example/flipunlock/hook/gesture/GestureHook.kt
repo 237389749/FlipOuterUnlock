@@ -8,21 +8,17 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
  * Hook fliphome to:
- * 1. Disable FlipLauncher (outer screen desktop) so the system falls back
- *    to the inner screen launcher (com.miui.home)
- * 2. Keep the gesture engine (TouchInteractionService + BaseGestureImpl)
- *    alive and active
+ * 1. Disable FlipLauncher → inner launcher takes over outer screen
+ * 2. Force-initialize the gesture engine for folded (outer screen) state
  *
- * Disabling via PackageManager.setComponentEnabledSetting with DONT_KILL_APP
- * keeps the fliphome process alive (TouchInteractionService still runs as
- * QUICKSTEP_SERVICE) while hiding FlipLauncher from the system's home
- * activity resolution.
+ * Key insight: BaseGestureImpl.init() registers the InputMonitor, but
+ * registerInputConsumer() and addBackStubWindow() are only called from
+ * onDisplayFoldChanged(true), which may never fire if FlipLauncher is
+ * disabled (the fold event observer is tied to Activity lifecycle).
  *
- * Gesture engine initialization (from reverse engineering):
- *   FlipApplication.attachBaseContext() → new BaseGestureImpl
- *   FlipApplication.onCreate() → BaseGestureImpl.init()
- *     → GestureInputHelper.initInputMonitor("swipe-up", displayId, ctx)
- *     → InputMonitor registered independently of FlipLauncher
+ * We bypass the event-driven model entirely: after init(), we directly
+ * set mIsFolded=true, registerInputConsumer(), addBackStubWindow(),
+ * and force enableGestureInput.
  */
 object GestureHook : BaseHook() {
     override val targetPackages = listOf("com.miui.fliphome")
@@ -32,19 +28,17 @@ object GestureHook : BaseHook() {
     override fun setupHooks(param: PackageReadyParam) {
         disableFlipLauncher(param)
         keepTouchInteractionServiceAlive(param)
+        forceInitGestureInFoldedState(param)
         forceGestureEnabled(param)
     }
 
     // ── 1. Disable FlipLauncher via PackageManager ────────────────────────
-    // Called from fliphome's own process, so we have permission to disable
-    // our own component. DONT_KILL_APP keeps the process alive.
     private fun disableFlipLauncher(param: PackageReadyParam) {
         if (launcherDisabled) return
         runCatching {
             val flipAppClass = param.classLoader.findClass(
                 "com.miui.fliphome.FlipApplication"
             )
-            // Hook onCreate which runs early — before FlipLauncher is created
             val onCreateMethod = flipAppClass.method("onCreate")
             hook(onCreateMethod, after { chain, result ->
                 if (launcherDisabled) return@after result
@@ -67,7 +61,7 @@ object GestureHook : BaseHook() {
                 }.onFailure { log("GestureFix: failed to disable FlipLauncher", it) }
                 result
             })
-            log("GestureFix: hooked FlipApplication.onCreate for launcher disable")
+            log("GestureFix: hooked FlipApplication.onCreate")
         }.onFailure { log("GestureFix: failed hook FlipApplication", it) }
     }
 
@@ -83,14 +77,57 @@ object GestureHook : BaseHook() {
         }.onFailure { log("GestureFix: failed hook TouchInteractionService", it) }
     }
 
-    // ── 3. Force gesture input always enabled ────────────────────────────
+    // ── 3. Force-initialize gesture for folded state ─────────────────────
+    // After BaseGestureImpl.init() completes, directly activate folded mode:
+    //   set mIsFolded = true
+    //   registerInputConsumer()  ← activates InputMonitor for swipe-up
+    //   addBackStubWindow()      ← creates edge stub views for back gesture
+    // This bypasses the onDisplayFoldChanged callback which may not fire
+    // when FlipLauncher is disabled.
+    private fun forceInitGestureInFoldedState(param: PackageReadyParam) {
+        runCatching {
+            val baseGestureImplClass = param.classLoader.findClass(
+                "com.miui.fliphome.gesture.BaseGestureImpl"
+            )
+            val initMethod = baseGestureImplClass.method("init")
+            hook(initMethod, after { chain, result ->
+                val impl = chain.thisObject
+                // 1. Set mIsFolded = true (bypass fold state observer)
+                impl.setField("mIsFolded", true)
+                log("GestureFix: set mIsFolded=true")
+
+                // 2. Register InputConsumer (activates swipe-up gesture monitor)
+                val helper = impl.getField("mGestureInputHelper")
+                if (helper != null) {
+                    val isRegistered = helper.callMethod("hasRegisterInputConsumer") as? Boolean
+                    if (isRegistered != true) {
+                        helper.callMethod("registerInputConsumer")
+                        log("GestureFix: force-registered InputConsumer after init")
+                    }
+                    helper.callMethod("setEnable", true)
+                    log("GestureFix: force-enabled gesture input after init")
+                }
+
+                // 3. Add back stub windows (edge swipe visual indicators)
+                // Deferred to background executor like the original does
+                impl.callMethod("addBackStubWindow")
+                log("GestureFix: triggered addBackStubWindow")
+
+                result
+            })
+            log("GestureFix: hooked BaseGestureImpl.init for folded-state init")
+        }.onFailure { log("GestureFix: failed hook BaseGestureImpl.init", it) }
+    }
+
+    // ── 4. Force gesture input always enabled ────────────────────────────
+    // Also hook onDisplayFoldChanged to ensure everything stays active.
     private fun forceGestureEnabled(param: PackageReadyParam) {
         runCatching {
             val baseGestureImplClass = param.classLoader.findClass(
                 "com.miui.fliphome.gesture.BaseGestureImpl"
             )
 
-            // After enableGestureInput, force setEnable(true) regardless of guards
+            // Force enableGestureInput → always setEnable(true)
             runCatching {
                 val enableMethod = baseGestureImplClass.method("enableGestureInput")
                 hook(enableMethod, after { chain, result ->
@@ -103,14 +140,14 @@ object GestureHook : BaseHook() {
                 log("GestureFix: force-enabled BaseGestureImpl.enableGestureInput")
             }
 
-            // Block disableGestureInput completely
+            // Block disableGestureInput
             runCatching {
                 val disableMethod = baseGestureImplClass.method("disableGestureInput")
                 hook(disableMethod, replaceResult(null))
                 log("GestureFix: blocked BaseGestureImpl.disableGestureInput")
             }
 
-            // Force registerInputConsumer when folded
+            // Reinforce on fold change
             runCatching {
                 val onFoldChanged = baseGestureImplClass.method(
                     "onDisplayFoldChanged", Boolean::class.javaPrimitiveType!!
@@ -123,7 +160,7 @@ object GestureHook : BaseHook() {
                             val isRegistered = helper.callMethod("hasRegisterInputConsumer") as? Boolean
                             if (isRegistered != true) {
                                 helper.callMethod("registerInputConsumer")
-                                log("GestureFix: force-registered InputConsumer")
+                                log("GestureFix: re-registered InputConsumer on fold")
                             }
                         }
                     }
