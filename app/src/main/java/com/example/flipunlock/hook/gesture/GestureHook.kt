@@ -47,7 +47,7 @@ object GestureHook : BaseHook() {
             // Hook onCreate which runs early — before FlipLauncher is created
             val onCreateMethod = flipAppClass.method("onCreate")
             hook(onCreateMethod, after { chain, result ->
-                if (launcherDisabled) return@after
+                if (launcherDisabled) return@after result
                 runCatching {
                     val app = chain.thisObject
                     val ctx = app.callMethod("getApplicationContext") as? android.content.Context
