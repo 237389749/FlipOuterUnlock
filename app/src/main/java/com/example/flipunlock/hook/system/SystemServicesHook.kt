@@ -15,10 +15,10 @@ object SystemServicesHook {
 
     private fun hookBoundsCompatUtilsByApp(param: SystemServerStartingParam) {
         runCatching {
-            val boundsCompatUtils = param.classLoader.findClass(
+            val boundsCompatUtils = param.classLoader.loadClass(
                 "com.android.server.wm.BoundsCompatUtils"
             )
-            val atmsClass = param.classLoader.findClass(
+            val atmsClass = param.classLoader.loadClass(
                 "android.app.ActivityTaskManagerService"
             )
             val method = boundsCompatUtils.method(
@@ -31,10 +31,10 @@ object SystemServicesHook {
 
     private fun hookBoundsCompatUtilsByActivity(param: SystemServerStartingParam) {
         runCatching {
-            val boundsCompatUtils = param.classLoader.findClass(
+            val boundsCompatUtils = param.classLoader.loadClass(
                 "com.android.server.wm.BoundsCompatUtils"
             )
-            val activityRecordClass = param.classLoader.findClass(
+            val activityRecordClass = param.classLoader.loadClass(
                 "com.android.server.wm.ActivityRecord"
             )
             val method = boundsCompatUtils.method(
@@ -47,10 +47,10 @@ object SystemServicesHook {
 
     private fun hookWindowManagerGetFullScreenValue(param: SystemServerStartingParam) {
         runCatching {
-            val wmsImpl = param.classLoader.findClass(
+            val wmsImpl = param.classLoader.loadClass(
                 "com.android.server.wm.WindowManagerServiceImpl"
             )
-            val packageItemInfoClass = param.classLoader.findClass(
+            val packageItemInfoClass = param.classLoader.loadClass(
                 "android.content.pm.PackageItemInfo"
             )
             val method = wmsImpl.method(

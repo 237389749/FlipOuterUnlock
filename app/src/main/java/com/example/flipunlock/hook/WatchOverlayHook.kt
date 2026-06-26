@@ -23,7 +23,7 @@ object WatchOverlayHook : BaseHook() {
     // ========== 1. Controller layer: force hide window ==========
     private fun hookCheckAppConfigRunnable(param: PackageReadyParam) {
         runCatching {
-            val runnableClass = param.classLoader.findClass(
+            val runnableClass = param.classLoader.loadClass(
                 "com.miui.fliphome.widget.WatchOverlayWindow\$CheckAppConfigRunnable"
             )
             val checkMethod = runnableClass.method(
@@ -46,7 +46,7 @@ object WatchOverlayHook : BaseHook() {
     // ========== 2. View layer: WatchOverlayGroupView fully disabled ==========
     private fun hookWatchOverlayGroupView(param: PackageReadyParam) {
         runCatching {
-            val clazz = param.classLoader.findClass(
+            val clazz = param.classLoader.loadClass(
                 "com.miui.fliphome.widget.ui.WatchOverlayGroupView"
             )
 
@@ -145,7 +145,7 @@ object WatchOverlayHook : BaseHook() {
     // ========== 3. Window layer: WatchOverlayWindow itself ==========
     private fun hookWatchOverlayWindow(param: PackageReadyParam) {
         runCatching {
-            val watchWindowClass = param.classLoader.findClass(
+            val watchWindowClass = param.classLoader.loadClass(
                 "com.miui.fliphome.widget.WatchOverlayWindow"
             )
 

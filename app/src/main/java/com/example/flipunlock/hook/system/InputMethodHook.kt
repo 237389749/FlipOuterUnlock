@@ -15,7 +15,7 @@ object InputMethodHook {
 
     private fun hookShouldShowCurrentInput(param: SystemServerStartingParam) {
         runCatching {
-            val immServiceClass = param.classLoader.findClass(
+            val immServiceClass = param.classLoader.loadClass(
                 "com.android.server.inputmethod.InputMethodManagerServiceImpl"
             )
             val method = immServiceClass.method("shouldShowCurrentInput", Context::class.java)
@@ -26,7 +26,7 @@ object InputMethodHook {
 
     private fun hookMakeRotateToast(param: SystemServerStartingParam) {
         runCatching {
-            val immServiceClass = param.classLoader.findClass(
+            val immServiceClass = param.classLoader.loadClass(
                 "com.android.server.inputmethod.InputMethodManagerServiceImpl"
             )
             val method = immServiceClass.method("makeRotateToast")

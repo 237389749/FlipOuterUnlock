@@ -35,7 +35,7 @@ object DeviceIdentityHook : BaseHook() {
     // Configuration.getScreenType() == 1, not covered by MiuiConfigs hooks.
     private fun hookDeviceUtils(param: PackageReadyParam) {
         runCatching {
-            val cls = param.classLoader.findClass("miuix.device.DeviceUtils")
+            val cls = param.classLoader.loadClass("miuix.device.DeviceUtils")
             runCatching {
                 val method = cls.method("isFlipTinyScreen", android.content.Context::class.java)
                 hook(method, replaceResult(false))
@@ -53,7 +53,7 @@ object DeviceIdentityHook : BaseHook() {
     // Gap from ref docs: for flip devices, uses screenType==1, not density.
     private fun hookDeviceHelper(param: PackageReadyParam) {
         runCatching {
-            val cls = param.classLoader.findClass("miuix.os.DeviceHelper")
+            val cls = param.classLoader.loadClass("miuix.os.DeviceHelper")
             runCatching {
                 val method = cls.method("isTinyScreen", android.content.Context::class.java)
                 hook(method, replaceResult(false))
@@ -72,7 +72,7 @@ object DeviceIdentityHook : BaseHook() {
     // Gap from ref docs: returns IS_FOLD || isFlipDevice()
     private fun hookMiuiConfigsFoldable(param: PackageReadyParam) {
         runCatching {
-            val cls = param.classLoader.findClass("miui.util.MiuiConfigs")
+            val cls = param.classLoader.loadClass("miui.util.MiuiConfigs")
             runCatching {
                 val method = cls.method("isFoldableDevice")
                 hook(method, replaceResult(false))

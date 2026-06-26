@@ -35,7 +35,7 @@ object CutoutHook : BaseHook() {
 
     private fun hookCutoutParser(classLoader: ClassLoader) {
         runCatching {
-            val parserClass = classLoader.findClass("android.view.CutoutSpecification\$Parser")
+            val parserClass = classLoader.loadClass("android.view.CutoutSpecification\$Parser")
             val parseMethod = parserClass.method("parse", String::class.java)
             // afterHookedMethod: modify parse result in-place
             hook(parseMethod, after { chain, result ->
@@ -72,8 +72,8 @@ object CutoutHook : BaseHook() {
     private fun hookDisplayUtilsGetCutoutPosition(param: PackageReadyParam) {
         if (param.packageName != "com.miui.aod") return
         runCatching {
-            val displayUtilsClass = param.classLoader.findClass("com.miui.aod.util.DisplayUtils")
-            val directionClass = param.classLoader.findClass("com.miui.aod.widget.Direction")
+            val displayUtilsClass = param.classLoader.loadClass("com.miui.aod.util.DisplayUtils")
+            val directionClass = param.classLoader.loadClass("com.miui.aod.widget.Direction")
             val noneDirection = directionClass.getField("CAMERA_CUTOUT_ON_NONE").get(null)
             val getCutoutPositionMethod = displayUtilsClass.method(
                 "getCutoutPosition", android.content.Context::class.java

@@ -36,7 +36,7 @@ object GestureHook : BaseHook() {
     private fun disableFlipLauncher(param: PackageReadyParam) {
         if (launcherDisabled) return
         runCatching {
-            val flipAppClass = param.classLoader.findClass(
+            val flipAppClass = param.classLoader.loadClass(
                 "com.miui.fliphome.FlipApplication"
             )
             val onCreateMethod = flipAppClass.method("onCreate")
@@ -68,7 +68,7 @@ object GestureHook : BaseHook() {
     // ── 2. Keep TouchInteractionService alive ───────────────────────────
     private fun keepTouchInteractionServiceAlive(param: PackageReadyParam) {
         runCatching {
-            val serviceClass = param.classLoader.findClass(
+            val serviceClass = param.classLoader.loadClass(
                 "com.miui.fliphome.gesture.service.TouchInteractionService"
             )
             val onDestroyMethod = serviceClass.method("onDestroy")
@@ -86,7 +86,7 @@ object GestureHook : BaseHook() {
     // when FlipLauncher is disabled.
     private fun forceInitGestureInFoldedState(param: PackageReadyParam) {
         runCatching {
-            val baseGestureImplClass = param.classLoader.findClass(
+            val baseGestureImplClass = param.classLoader.loadClass(
                 "com.miui.fliphome.gesture.BaseGestureImpl"
             )
             val initMethod = baseGestureImplClass.method("init")
@@ -123,7 +123,7 @@ object GestureHook : BaseHook() {
     // Also hook onDisplayFoldChanged to ensure everything stays active.
     private fun forceGestureEnabled(param: PackageReadyParam) {
         runCatching {
-            val baseGestureImplClass = param.classLoader.findClass(
+            val baseGestureImplClass = param.classLoader.loadClass(
                 "com.miui.fliphome.gesture.BaseGestureImpl"
             )
 

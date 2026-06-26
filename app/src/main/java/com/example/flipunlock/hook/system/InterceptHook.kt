@@ -16,7 +16,7 @@ object InterceptHook {
 
     private fun hookIsInterceptListUnCheckFold(param: SystemServerStartingParam) {
         runCatching {
-            val interceptClass = param.classLoader.findClass(
+            val interceptClass = param.classLoader.loadClass(
                 "com.android.server.wm.InterceptActivityController"
             )
             val method = interceptClass.method(
@@ -29,7 +29,7 @@ object InterceptHook {
 
     private fun hookIsInterceptListForProperty(param: SystemServerStartingParam) {
         runCatching {
-            val interceptClass = param.classLoader.findClass(
+            val interceptClass = param.classLoader.loadClass(
                 "com.android.server.wm.InterceptActivityController"
             )
             val method = interceptClass.method(

@@ -26,7 +26,7 @@ object SystemUIHook : BaseHook() {
     // We force true to always hide from SystemUI side.
     private fun hookDecorWindowManager(param: PackageReadyParam) {
         runCatching {
-            val cls = param.classLoader.findClass(
+            val cls = param.classLoader.loadClass(
                 "com.android.notification.decor.DecorWindowManagerImpl"
             )
             val method = cls.method(

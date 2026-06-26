@@ -27,7 +27,7 @@ object LetterboxHook {
     fun hook(param: SystemServerStartingParam) {
         safeHook("LetterboxHook") {
             runCatching {
-                val windowStateClass = param.classLoader.findClass(
+                val windowStateClass = param.classLoader.loadClass(
                     "com.android.server.wm.WindowState"
                 )
                 val method = windowStateClass.method("isLetterboxedForDisplayCutout")
