@@ -3,12 +3,14 @@ package com.example.flipunlock
 import com.example.flipunlock.hook.ActivityLifecycleHook
 import com.example.flipunlock.hook.CutoutHook
 import com.example.flipunlock.hook.DeviceIdentityHook
+import com.example.flipunlock.hook.ScreenTypeHook
 import com.example.flipunlock.hook.SystemUIHook
 import com.example.flipunlock.hook.WatchOverlayHook
 import com.example.flipunlock.hook.gesture.GestureHook
 import com.example.flipunlock.hook.system.InputMethodHook
 import com.example.flipunlock.hook.system.InterceptHook
 import com.example.flipunlock.hook.system.LetterboxHook
+import com.example.flipunlock.hook.system.SubScreenGestureHook
 import com.example.flipunlock.hook.system.SystemServicesHook
 import com.example.flipunlock.hook.system.WhitelistHook
 import io.github.libxposed.api.XposedModule
@@ -21,6 +23,7 @@ internal var module: Main? = null
 class Main : XposedModule() {
 
     private val hooks = listOf(
+        ScreenTypeHook,
         DeviceIdentityHook,
         CutoutHook,
         SystemUIHook,
@@ -37,6 +40,7 @@ class Main : XposedModule() {
         CutoutHook.hookFramework(param)
         LetterboxHook.hook(param)
         WhitelistHook.hook(param)
+        SubScreenGestureHook.hook(param)
         SystemServicesHook.hook(param)
         InputMethodHook.hook(param)
         InterceptHook.hook(param)

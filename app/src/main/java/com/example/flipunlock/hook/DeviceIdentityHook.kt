@@ -31,7 +31,34 @@ object DeviceIdentityHook : BaseHook() {
             hookDeviceUtils(param)          // miuix.device.DeviceUtils
             hookDeviceHelper(param)         // miuix.os.DeviceHelper
             hookMiuiConfigs(param)          // miui.util.MiuiConfigs
+            hookDefensiveStatics(param)     // IS_FOLD, IS_NOTCH, IS_FOLDABLE (point.txt #5)
         }
+    }
+
+    // ── Defensive: clear other fold/notch static flags (point.txt #5) ─────
+    // These are less critical than isFlipDevice but provide defense-in-depth
+    // against foldable/tablet/notch-specific behavior paths.
+    @Suppress("BanDiscouragedJavaApi")
+    private fun hookDefensiveStatics(param: PackageReadyParam) {
+        clearStaticFinalField(param, "miui.util.MiuiConfigs", "IS_FOLD", false)
+        clearStaticFinalField(param, "miui.util.MiuiConfigs", "IS_NOTCH", false)
+        clearStaticFinalField(param, "miui.util.MiuiConfigs", "IS_PAD", false)
+        clearStaticFinalField(param, "miuix.os.Build", "IS_FOLDABLE", false)
+    }
+
+    private fun clearStaticFinalField(param: PackageReadyParam, className: String, fieldName: String, value: Boolean) {
+        runCatching {
+            val cls = param.classLoader.loadClass(className)
+            val field = cls.field(fieldName)
+            field.isAccessible = true
+            runCatching {
+                val modifiersField = java.lang.reflect.Field::class.java.getDeclaredField("modifiers")
+                modifiersField.isAccessible = true
+                modifiersField.setInt(field, field.modifiers and 0xFFFFFFEF.toInt())
+            }
+            field.setBoolean(null, value)
+            log("DeviceIdentity: set $className.$fieldName = $value")
+        }.onFailure { /* class or field may not exist */ }
     }
 
     // ── ROOT: MiuiMultiDisplayTypeInfo.isFlipDevice() ────────────────────
