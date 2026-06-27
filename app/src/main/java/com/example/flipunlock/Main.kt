@@ -7,6 +7,8 @@ import com.example.flipunlock.hook.ScreenTypeHook
 import com.example.flipunlock.hook.SystemUIHook
 import com.example.flipunlock.hook.WatchOverlayHook
 import com.example.flipunlock.hook.gesture.GestureHook
+import com.example.flipunlock.hook.system.AppBoundsHook
+import com.example.flipunlock.hook.system.CompatConfigHook
 import com.example.flipunlock.hook.system.InputMethodHook
 import com.example.flipunlock.hook.system.InterceptHook
 import com.example.flipunlock.hook.system.LetterboxHook
@@ -41,6 +43,8 @@ class Main : XposedModule() {
         LetterboxHook.hook(param)
         WhitelistHook.hook(param)
         SubScreenGestureHook.hook(param)
+        CompatConfigHook.hook(param)
+        AppBoundsHook.hook(param)
         SystemServicesHook.hook(param)
         InputMethodHook.hook(param)
         InterceptHook.hook(param)

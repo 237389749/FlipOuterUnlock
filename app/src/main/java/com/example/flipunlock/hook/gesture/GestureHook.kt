@@ -1,7 +1,11 @@
 package com.example.flipunlock.hook.gesture
 
 import android.content.ComponentName
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Bundle
+import android.os.UserHandle
+import android.view.View
 import com.example.flipunlock.hook.BaseHook
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
@@ -26,10 +30,24 @@ object GestureHook : BaseHook() {
     private var launcherDisabled = false
 
     override fun setupHooks(param: PackageReadyParam) {
+        hookNoStartPage(param)
         disableFlipLauncher(param)
         keepTouchInteractionServiceAlive(param)
         forceInitGestureInFoldedState(param)
         forceGestureEnabled(param)
+    }
+
+    // ── 0. No start page (ported from MixFlipMod FlipHomeHook) ───────────
+    // Some apps (MiHome, Weibo, NetEaseMusic) show an interstitial start
+    // page when launched on the outer screen. This hook disables that.
+    private fun hookNoStartPage(param: PackageReadyParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass("com.miui.fliphome.utils.PerformLaunchAction")
+            val method = cls.method("onStartIntercept",
+                UserHandle::class.java, Intent::class.java, Bundle::class.java, View::class.java)
+            hook(method, replaceResult(false))
+            log("GestureFix: disabled start page intercept")
+        }.onFailure { log("GestureFix: PerformLaunchAction not found (harmless)", it) }
     }
 
     // ── 1. Disable FlipLauncher via PackageManager ────────────────────────

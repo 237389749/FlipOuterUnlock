@@ -34,3 +34,22 @@ internal fun before(block: (Chain) -> Unit): Hooker = Hooker { chain ->
     block(chain)
     chain.proceed()
 }
+
+internal inline fun <T> runWithCleanup(cleanup: () -> Unit, block: () -> T): T {
+    return runCatching(block).also { cleanup() }.getOrThrow()
+}
+
+internal fun hookScope(origin: Executable, activeHooker: (Chain) -> Any?): HookScope {
+    val active = ThreadLocal<Boolean>()
+    hook(origin) { chain ->
+        if (active.get() == true) activeHooker(chain) else chain.proceed()
+    }
+    return HookScope(active)
+}
+
+internal class HookScope(private val active: ThreadLocal<Boolean>) {
+    fun <T> run(block: () -> T): T {
+        active.set(true)
+        return runWithCleanup({ active.remove() }, block)
+    }
+}
