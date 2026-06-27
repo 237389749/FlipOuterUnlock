@@ -27,7 +27,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v5
         with:
-          cache-cleanup: true
+          cache-cleanup: on-success
 
       - name: Run lint
         continue-on-error: true
@@ -67,7 +67,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v5
         with:
-          cache-cleanup: true
+          cache-cleanup: on-success
 
       - name: Build (Release)
         if: steps.signing.outputs.available == 'true'
