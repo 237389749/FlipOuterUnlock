@@ -29,7 +29,7 @@ object AppBoundsHook {
         val windowStateClass = param.classLoader.loadClass("com.android.server.wm.WindowState")
         val insetsStateClass = param.classLoader.loadClass("android.view.InsetsState")
         hook(
-            windowStateClass.method("fillInsetsState", insetsStateClass, Boolean::class.javaPrimitiveType),
+            windowStateClass.method("fillInsetsState", insetsStateClass, Boolean::class.javaPrimitiveType!!),
             after { chain, _ ->
                 runCatching {
                     val state = chain.args[0]
