@@ -47,10 +47,12 @@ object LauncherDensityHook : BaseHook() {
                     val context = chain.args[0] as? android.content.Context
                         ?: return@runCatching
                     val resources = context.resources
-                    val currentDpi = resources.displayMetrics.densityDpi
+                    val metrics = resources.displayMetrics
 
-                    // Only apply if we're on the outer screen (high density)
-                    if (currentDpi <= TARGET_DENSITY_DPI) return@runCatching
+                    // Only apply on outer screen (1392px height), not inner (2912px)
+                    if (metrics.heightPixels > 1500) return@runCatching
+
+                    if (metrics.densityDpi <= TARGET_DENSITY_DPI) return@runCatching
 
                     // Build DensityConfig with target density
                     val densityUtilClass = param.classLoader.loadClass(
