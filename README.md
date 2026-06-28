@@ -32,7 +32,7 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 - Suppress rotation toast
 - Lock Sogou as preferred IME when folded
 - Sogou toolbar & clipboard fix — restores full keyboard layout on outer screen (uses DexKit)
-- **Known issue**: Scan preview orientation in third-party apps depends on the app's own logic — some use system rotation APIs, others compute via `CameraCharacteristics`. One orientation always works correctly regardless.
+- **Known issue**: Scan preview orientation varies by app. Some apps require holding the phone with the camera side down BEFORE opening the scan; others use their own camera logic and work regardless.
 
 **SystemUI**
 - Widget overlay disabled — 4-layer defense in fliphome process
@@ -132,7 +132,7 @@ AGPL-3.0
 - 横屏键盘启用 + 禁旋转提示
 - 折叠时锁 Sogou 为默认输入法
 - Sogou 工具栏+剪贴板修复（DexKit）
-- **已知问题**：第三方应用扫一扫预览方向取决于应用自身逻辑——部分走系统旋转 API，部分通过 `CameraCharacteristics` 自行计算。始终有一侧方向正常
+- **已知问题**：扫一扫预览方向因应用而异。部分应用需在**点击扫一扫前**以靠近摄像头一侧为底才能正常显示；部分应用走自带逻辑，无需调整即可正常
 
 **SystemUI**
 - Widget 覆盖层 4 层禁用
