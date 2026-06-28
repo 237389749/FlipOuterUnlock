@@ -25,7 +25,7 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 - Fix app bounds on cold start and configuration changes
 
 **Device Identity**
-- Spoof device identity — hooks 7 detection paths: `MiuiMultiDisplayTypeInfo.isFlipDevice()`, `miui.os.Build`, `miuix.os.Build.IS_FLIP`, `DeviceUtils`, `DeviceHelper`, `MiuiConfigs`
+- Spoof device identity — hooks 7 detection paths: `MiuiMultiDisplayTypeInfo.isFlipDevice()`, `miui.os.Build`, `miuix.os.Build.IS_FLIP`, `DeviceUtils`, `DeviceHelper`, `MiuiConfigs`. Excludes SystemUI (lock screen) and Sogou IME (keyboard height)
 - Spoof screen type — hooks MIUI's `Configuration.getScreenType()` to return 0 (EXPAND)
 - Scan orientation may vary by app — some require holding the camera side down before opening
 
@@ -132,7 +132,7 @@ AGPL-3.0
 - 修复冷启动与配置变更时 appBounds
 
 **设备身份**
-- 伪装设备类型：hook 7 条检测路径（`MiuiMultiDisplayTypeInfo.isFlipDevice()`、`miui.os.Build`、`miuix.os.Build.IS_FLIP`、`DeviceUtils`、`DeviceHelper`、`MiuiConfigs`）
+- 伪装设备类型：hook 7 条检测路径（`MiuiMultiDisplayTypeInfo.isFlipDevice()`、`miui.os.Build`、`miuix.os.Build.IS_FLIP`、`DeviceUtils`、`DeviceHelper`、`MiuiConfigs`）。排除 SystemUI（锁屏）和 Sogou 输入法（键盘高度）
 - 伪装屏幕类型：`Configuration.getScreenType()` → 0
 - 扫一扫预览方向因应用而异——部分需在打开前以摄像头侧为底
 
