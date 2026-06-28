@@ -174,17 +174,8 @@ object DeviceIdentityHook : BaseHook() {
                 hook(method, replaceResult(false))
                 log("DeviceIdentity: blocked MiuiConfigs.isTinyScreen")
             }
-            // getAdjustedRotation: re-add 180° compensation since isFlipTinyScreen→false.
-            // WeChat excluded above → uses original flip behavior for scan orientation.
-            runCatching {
-                val method = cls.method("getAdjustedRotation", android.content.Context::class.java)
-                hook(method) { chain ->
-                    val ctx = chain.args[0] as? android.content.Context
-                    val rotation = ctx?.display?.rotation ?: 0
-                    (rotation + 2) % 4
-                }
-                log("DeviceIdentity: forced getAdjustedRotation always +180°")
-            }
+            // getAdjustedRotation: not needed. Scan orientation is correct
+            // when the phone is held with one specific side down.
         }.onFailure { log("DeviceIdentity: MiuiConfigs not found", it) }
     }
 }
