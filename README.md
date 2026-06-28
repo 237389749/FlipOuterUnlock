@@ -32,7 +32,7 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 - Suppress rotation toast
 - Lock Sogou as preferred IME when folded
 - Sogou toolbar & clipboard fix — restores full keyboard layout on outer screen (uses DexKit)
-- **Known issue**: WeChat scan preview orientation depends on which side of the phone faces down — one direction works, the other is inverted. Hold the phone with the camera side down for correct orientation.
+- **Known issue**: Scan preview orientation in third-party apps depends on the app's own logic — some use system rotation APIs, others compute via `CameraCharacteristics`. One orientation always works correctly regardless.
 
 **SystemUI**
 - Widget overlay disabled — 4-layer defense in fliphome process
@@ -98,7 +98,6 @@ For CI, add GitHub Secrets: `KEY_STORE` (base64), `KEY_STORE_PASSWORD`, `ALIAS`,
 
 ### Credits
 
-- Original [FlipOutScreenUnlock](https://github.com/237389749/FlipOutScreenUnlock) (Xposed/Java) — ported to LSPosed/Kotlin
 - [MixFlipMod](https://github.com/parallelcc/MixFlipMod) by Parallelc — reference for LSPosed architecture, SogouHook, DexKit usage, SystemUI hooks, and hook utilities
 - Reverse engineering references in `refMD/cleaned/` (decompiled MIUI framework, services, fliphome APKs)
 
@@ -133,7 +132,7 @@ AGPL-3.0
 - 横屏键盘启用 + 禁旋转提示
 - 折叠时锁 Sogou 为默认输入法
 - Sogou 工具栏+剪贴板修复（DexKit）
-- **已知问题**：微信扫一扫的预览方向取决于手机朝向——以靠近摄像头一侧为底则正常，远离则倒置
+- **已知问题**：第三方应用扫一扫预览方向取决于应用自身逻辑——部分走系统旋转 API，部分通过 `CameraCharacteristics` 自行计算。始终有一侧方向正常
 
 **SystemUI**
 - Widget 覆盖层 4 层禁用
@@ -162,7 +161,6 @@ CI: GitHub Secrets → `KEY_STORE`(base64), `KEY_STORE_PASSWORD`, `ALIAS`, `KEY_
 
 ### 致谢
 
-- [FlipOutScreenUnlock](https://github.com/237389749/FlipOutScreenUnlock) — 原始 Java/Xposed 模块
 - [MixFlipMod](https://github.com/parallelcc/MixFlipMod) by Parallelc — LSPosed 架构、SogouHook、DexKit、SystemUI hook 及工具类参考
 - `refMD/cleaned/` — MIUI 框架及 fliphome 反编译参考文档
 

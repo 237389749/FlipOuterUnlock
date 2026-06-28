@@ -24,10 +24,9 @@ object DeviceIdentityHook : BaseHook() {
     override val targetPackages = listOf("*")
 
     override fun hook(param: PackageReadyParam) {
-        // These packages need original flip behavior:
-        // - SystemUI: TinyKeyguardPanelViewController (lock screen panel)
-        // - WeChat: scan camera preview orientation
-        if (param.packageName in setOf("com.android.systemui", "com.tencent.mm")) return
+        // SystemUI needs original flip behavior:
+        // TinyKeyguardPanelViewController (lock screen panel)
+        if (param.packageName == "com.android.systemui") return
         safeHook("DeviceIdentityHook") {
             hookRootDeviceType(param)       // MiuiMultiDisplayTypeInfo
             hookMiuiBuild(param)            // miui.os.Build
@@ -174,18 +173,9 @@ object DeviceIdentityHook : BaseHook() {
                 hook(method, replaceResult(false))
                 log("DeviceIdentity: blocked MiuiConfigs.isTinyScreen")
             }
-            // getAdjustedRotation: re-add 180° compensation for camera preview.
-            // Without this, scan orientation in all apps depends on phone
-            // rotation at the moment of opening the scan.
-            runCatching {
-                val method = cls.method("getAdjustedRotation", android.content.Context::class.java)
-                hook(method) { chain ->
-                    val ctx = chain.args[0] as? android.content.Context
-                    val rotation = ctx?.display?.rotation ?: 0
-                    (rotation + 2) % 4
-                }
-                log("DeviceIdentity: forced getAdjustedRotation always +180°")
-            }
+            // getAdjustedRotation: removed. Rotation compensation is
+            // app-specific — some use system logic, others compute via
+            // CameraCharacteristics. One orientation always works.
         }.onFailure { log("DeviceIdentity: MiuiConfigs not found", it) }
     }
 }
