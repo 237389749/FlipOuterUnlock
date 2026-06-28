@@ -1,79 +1,169 @@
-# FlipOuterUnlock
+# FlipOuterUnlock / MIX Flip 外屏解锁模块
+
+[English](#english) | [中文](#chinese)
+
+---
+
+<a name="english"></a>
+## English
 
 LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 
-## Features
+### Features
 
-### Display & Fullscreen
-- **Remove outer screen display cutout** — clears the camera hole-punch via `Display.getCutout()` zero-cutout injection and `CutoutSpecification.Parser` field nullification
-- **Force fullscreen for all apps** — sets `layoutInDisplayCutoutMode=ALWAYS` on every Activity, forces `BoundsCompatUtils.getFlipCompatMode()` to 0
-- **Spoof device identity** — hooks `MiuiMultiDisplayTypeInfo.isFlipDevice()`, `miui.os.Build`, `miuix.os.Build.IS_FLIP`, `DeviceUtils`, `DeviceHelper`, `MiuiConfigs` — covers all 7 independent detection paths
-- **Whitelist all apps** — uses `ContinuityPolicyService` dump injection to allow all apps on the external screen
-- **Compat config injection** — `ApplicationCompatManager` → `miui.continuity.policy=5`, `PROPERTY_COMPAT_ALLOW_SMALL_COVER_SCREEN=1`
-- **Flip continuity** — `isFlipContinuityEnabledFromSetting` → always true
-- **App bounds fixes** — `fillInsetsState` (remove cutout insets), `LaunchActivityItem` (cold start bounds), `scheduleConfigurationChanged` + `scheduleClientTransactionItem` (config change bounds)
+**Display & Fullscreen**
+- Remove outer screen display cutout — clears camera hole-punch via `Display.getCutout()` zero-cutout injection
+- Prevent cutout letterboxing — hooks `WindowState.isLetterboxedForDisplayCutout()` in system_server
+- Force fullscreen for all apps — sets `layoutInDisplayCutoutMode=ALWAYS` on every Activity
+- Fix app bounds on cold start and configuration changes
 
-### IME & Input
-- **Enable IME in landscape** — hooks `shouldShowCurrentInput()` → true, suppresses rotation toast
-- **Remove app launch restrictions** — hooks `InterceptActivityController.isInterceptListUnCheckFold()` → false
+**Device Identity**
+- Spoof device identity — hooks 7 detection paths: `MiuiMultiDisplayTypeInfo.isFlipDevice()`, `miui.os.Build`, `miuix.os.Build.IS_FLIP`, `DeviceUtils`, `DeviceHelper`, `MiuiConfigs`
+- Spoof screen type — hooks MIUI's `Configuration.getScreenType()` to return 0 (EXPAND)
+- Fix camera preview rotation — hooks `getAdjustedRotation()` to maintain 180° compensation
 
-### Widget Overlay
-- **Disable WatchOverlay widget** — 4-layer defense: controller (CheckAppConfigRunnable), view (WatchOverlayGroupView), window (WatchOverlayWindow), and WindowManager.addView interception
+**App Management**
+- Whitelist all apps for continuity — uses `ContinuityPolicyService` dump injection
+- Compat config injection — `ApplicationCompatManager` → `miui.continuity.policy=5`
+- Remove app launch restrictions — `InterceptActivityController.isInterceptListUnCheckFold()` → false
 
-### Experimental (commented out for stability testing)
-- `ScreenTypeHook` — `Configuration.getScreenType()` → 0
-- `LetterboxHook` — `WindowState.isLetterboxedForDisplayCutout()` → false
-- `SubScreenGestureHook` — `MiuiSubScreenMultiFingerGestureManager` init for Mix Flip
-- `SystemUIHook` (expanded) — notification menu, clock hiding, status bar icon expansion
-- `GestureHook` — FlipLauncher disable + gesture engine keep-alive + no-start-page
+**IME & Input**
+- Enable IME in landscape — hooks `shouldShowCurrentInput()` → true
+- Suppress rotation toast
+- Lock Sogou as preferred IME when folded
+- Sogou toolbar & clipboard fix — restores full keyboard layout on outer screen (uses DexKit)
 
-## Hook Architecture
+**SystemUI**
+- Widget overlay disabled — 4-layer defense in fliphome process
+- SystemUI-side widget suppression — hides decor window
+- Notification menu fix — restores long-press menu via `isTinyScreen` scope faking
+- Status bar clock hidden on outer screen
+- Status bar icon expansion — shows up to 8 notification icons
+
+### Hook Architecture
 
 ```
 onSystemServerStarting (system_server):
-├── CutoutHook.hookFramework    → Display.getCutout + CutoutSpecification.Parser
-├── WhitelistHook               → ContinuityPolicyService dump injection
-├── CompatConfigHook            → ApplicationCompatManager + flip continuity
-├── AppBoundsHook               → fillInsetsState + LaunchActivityItem + config changes
-├── SystemServicesHook          → BoundsCompatUtils + WindowManagerServiceImpl
-├── InputMethodHook             → shouldShowCurrentInput + makeRotateToast
-└── InterceptHook               → isInterceptListUnCheckFold + isInterceptListForProperty
+├── CutoutHook.hookFramework
+├── LetterboxHook
+├── WhitelistHook
+├── CompatConfigHook
+├── AppBoundsHook
+├── SystemServicesHook
+├── InputMethodHook
+└── InterceptHook
 
 onPackageReady:
-├── DeviceIdentityHook [*]      → 7 device identity methods → false
-├── CutoutHook [systemui,aod,camera] → Display.getCutout per-process
-├── ActivityLifecycleHook [*]   → layoutInDisplayCutoutMode=ALWAYS on all Activities
-└── WatchOverlayHook [fliphome] → 4-layer widget overlay defense
+├── DeviceIdentityHook [* except SystemUI]
+├── CutoutHook [systemui, aod, camera]
+├── SystemUIHook [systemui]
+├── SogouInputHook [sogou]
+├── ActivityLifecycleHook [*]
+└── WatchOverlayHook [fliphome]
 ```
 
-## Requirements
+### Requirements
 
 - LSPosed (libxposed API 101+)
 - Xiaomi MIX Flip / MIX Flip 2
 - HyperOS / MIUI
 
-## Build
+### Build
 
 ```bash
 ./gradlew :app:assembleDebug
 ```
 
-### Release build (signed)
+### Release (signed)
 
-Set signing properties in `gradle.properties`:
-```properties
-androidStoreFile=key.jks
-androidStorePassword=...
-androidKeyAlias=...
-androidKeyPassword=...
+Generate a keystore:
+```bash
+keytool -genkey -v -keystore flip.jks -keyalg RSA -keysize 2048 -validity 10000 -alias flip
 ```
 
-## Credits
+Create `local.properties` (git-ignored):
+```properties
+androidStoreFile=flip.jks
+androidStorePassword=<your-password>
+androidKeyAlias=flip
+androidKeyPassword=<your-password>
+```
 
-Ported from [FlipOutScreenUnlock](https://github.com/237389749/FlipOutScreenUnlock) (Xposed/Java) to LSPosed/Kotlin.
+```bash
+./gradlew :app:assembleRelease
+```
 
-Reverse engineering references in `refMD/cleaned/` based on decompiled MIUI framework, services, and fliphome APKs.
+For CI, add GitHub Secrets: `KEY_STORE` (base64), `KEY_STORE_PASSWORD`, `ALIAS`, `KEY_PASSWORD`.
 
-## License
+### Credits
+
+- Original [FlipOutScreenUnlock](https://github.com/237389749/FlipOutScreenUnlock) (Xposed/Java) — ported to LSPosed/Kotlin
+- [MixFlipMod](https://github.com/parallelcc/MixFlipMod) by Parallelc — reference for LSPosed architecture, SogouHook, DexKit usage, SystemUI hooks, and hook utilities
+- Reverse engineering references in `refMD/cleaned/` (decompiled MIUI framework, services, fliphome APKs)
+
+### License
+
+AGPL-3.0
+
+---
+
+<a name="chinese"></a>
+## 中文
+
+### 功能
+
+**显示与全屏**
+- 移除挖孔：`Display.getCutout()` 零值注入 + `CutoutSpecification.Parser` 字段清零
+- 防 letterboxing：`WindowState.isLetterboxedForDisplayCutout()` → false
+- 全屏模式：所有 Activity 设置 `layoutInDisplayCutoutMode=ALWAYS`
+- 修复冷启动与配置变更时 appBounds
+
+**设备身份**
+- 伪装设备类型：hook 7 条检测路径（`MiuiMultiDisplayTypeInfo`、`miuix.os.Build` 等）
+- 伪装屏幕类型：`Configuration.getScreenType()` 返回 0
+- 修复相机预览旋转：`getAdjustedRotation()` 保持 180° 补偿
+
+**应用管理**
+- 所有应用白名单注入
+- 兼容配置注入：`miui.continuity.policy=5`
+- 移除应用启动拦截
+
+**输入法**
+- 横屏键盘启用 + 禁旋转提示
+- 折叠时锁 Sogou 为默认输入法
+- Sogou 工具栏+剪贴板修复（DexKit）
+
+**SystemUI**
+- Widget 覆盖层 4 层禁用
+- SystemUI 侧 widget 隐藏
+- 通知菜单修复
+- 外屏状态栏时钟隐藏
+- 通知图标扩展到 8 个
+
+### 构建与签名
+
+```bash
+# 生成密钥
+keytool -genkey -v -keystore flip.jks -keyalg RSA -keysize 2048 -validity 10000 -alias flip
+
+# local.properties
+androidStoreFile=flip.jks
+androidStorePassword=<密码>
+androidKeyAlias=flip
+androidKeyPassword=<密码>
+
+# 签名构建
+./gradlew :app:assembleRelease
+```
+
+CI: GitHub Secrets → `KEY_STORE`(base64), `KEY_STORE_PASSWORD`, `ALIAS`, `KEY_PASSWORD`
+
+### 致谢
+
+- [FlipOutScreenUnlock](https://github.com/237389749/FlipOutScreenUnlock) — 原始 Java/Xposed 模块
+- [MixFlipMod](https://github.com/parallelcc/MixFlipMod) by Parallelc — LSPosed 架构、SogouHook、DexKit、SystemUI hook 及工具类参考
+- `refMD/cleaned/` — MIUI 框架及 fliphome 反编译参考文档
+
+### License
 
 AGPL-3.0
