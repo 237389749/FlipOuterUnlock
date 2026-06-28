@@ -6,43 +6,42 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 
 ### Display & Fullscreen
 - **Remove outer screen display cutout** — clears the camera hole-punch via `Display.getCutout()` zero-cutout injection and `CutoutSpecification.Parser` field nullification
-- **Prevent cutout letterboxing** — hooks `WindowState.isLetterboxedForDisplayCutout()` in system_server
 - **Force fullscreen for all apps** — sets `layoutInDisplayCutoutMode=ALWAYS` on every Activity, forces `BoundsCompatUtils.getFlipCompatMode()` to 0
-- **Spoof device identity** — hooks `MiuiMultiDisplayTypeInfo.isFlipDevice()`, `MiuiConfigs.isTinyScreen/isFlipTinyScreen`, `miuix.os.Build.IS_FLIP`, `DeviceUtils`, `DeviceHelper`, and more — covers all 7 independent detection paths
-- **Spoof screen type** — hooks MIUI's `Configuration.getScreenType()` to always return 0 (EXPAND) instead of 1 (FOLD)
-- **Whitelist all apps for continuity** — uses `ContinuityPolicyService` to allow all apps on the external screen
-
-### Gestures
-- **Preserve external screen gestures** — keeps `TouchInteractionService` and `BaseGestureImpl` alive when FlipLauncher is disabled
-- **Enable sub-screen gestures** — force-initializes `MiuiSubScreenMultiFingerGestureManager` on Mix Flip (normally only for independent rear devices), unlocking system-level multi-finger gestures on the external display
-- **Force gesture input in folded state** — bypasses `onDisplayFoldChanged` event dependency after `BaseGestureImpl.init()`
+- **Spoof device identity** — hooks `MiuiMultiDisplayTypeInfo.isFlipDevice()`, `miui.os.Build`, `miuix.os.Build.IS_FLIP`, `DeviceUtils`, `DeviceHelper`, `MiuiConfigs` — covers all 7 independent detection paths
+- **Whitelist all apps** — uses `ContinuityPolicyService` dump injection to allow all apps on the external screen
+- **Compat config injection** — `ApplicationCompatManager` → `miui.continuity.policy=5`, `PROPERTY_COMPAT_ALLOW_SMALL_COVER_SCREEN=1`
+- **Flip continuity** — `isFlipContinuityEnabledFromSetting` → always true
+- **App bounds fixes** — `fillInsetsState` (remove cutout insets), `LaunchActivityItem` (cold start bounds), `scheduleConfigurationChanged` + `scheduleClientTransactionItem` (config change bounds)
 
 ### IME & Input
 - **Enable IME in landscape** — hooks `shouldShowCurrentInput()` → true, suppresses rotation toast
 - **Remove app launch restrictions** — hooks `InterceptActivityController.isInterceptListUnCheckFold()` → false
 
 ### Widget Overlay
-- **Disable WatchOverlay widget** — 4-layer defense: controller (CheckAppConfigRunnable), view (WatchOverlayGroupView hooks), window (WatchOverlayWindow), and WindowManager.addView interception
-- **SystemUI-side widget suppression** — hooks `DecorWindowManagerImpl.shouldHideDecorWindow()` → true
+- **Disable WatchOverlay widget** — 4-layer defense: controller (CheckAppConfigRunnable), view (WatchOverlayGroupView), window (WatchOverlayWindow), and WindowManager.addView interception
+
+### Experimental (commented out for stability testing)
+- `ScreenTypeHook` — `Configuration.getScreenType()` → 0
+- `LetterboxHook` — `WindowState.isLetterboxedForDisplayCutout()` → false
+- `SubScreenGestureHook` — `MiuiSubScreenMultiFingerGestureManager` init for Mix Flip
+- `SystemUIHook` (expanded) — notification menu, clock hiding, status bar icon expansion
+- `GestureHook` — FlipLauncher disable + gesture engine keep-alive + no-start-page
 
 ## Hook Architecture
 
 ```
 onSystemServerStarting (system_server):
 ├── CutoutHook.hookFramework    → Display.getCutout + CutoutSpecification.Parser
-├── LetterboxHook               → isLetterboxedForDisplayCutout → false
 ├── WhitelistHook               → ContinuityPolicyService dump injection
-├── SubScreenGestureHook        → MiuiSubScreenMultiFingerGestureManager init
+├── CompatConfigHook            → ApplicationCompatManager + flip continuity
+├── AppBoundsHook               → fillInsetsState + LaunchActivityItem + config changes
 ├── SystemServicesHook          → BoundsCompatUtils + WindowManagerServiceImpl
 ├── InputMethodHook             → shouldShowCurrentInput + makeRotateToast
 └── InterceptHook               → isInterceptListUnCheckFold + isInterceptListForProperty
 
 onPackageReady:
-├── ScreenTypeHook [*]          → Configuration.getScreenType → 0
 ├── DeviceIdentityHook [*]      → 7 device identity methods → false
 ├── CutoutHook [systemui,aod,camera] → Display.getCutout per-process
-├── SystemUIHook [systemui]     → DecorWindowManagerImpl.shouldHideDecorWindow
-├── GestureHook [fliphome]      → disable FlipLauncher + keep gesture engine alive
 ├── ActivityLifecycleHook [*]   → layoutInDisplayCutoutMode=ALWAYS on all Activities
 └── WatchOverlayHook [fliphome] → 4-layer widget overlay defense
 ```
@@ -52,7 +51,6 @@ onPackageReady:
 - LSPosed (libxposed API 101+)
 - Xiaomi MIX Flip / MIX Flip 2
 - HyperOS / MIUI
-- Recommended scope: system, com.android.systemui, com.miui.aod, com.android.camera, com.miui.fliphome, and all apps
 
 ## Build
 
@@ -68,10 +66,6 @@ androidStoreFile=key.jks
 androidStorePassword=...
 androidKeyAlias=...
 androidKeyPassword=...
-```
-Then:
-```bash
-./gradlew :app:assembleRelease
 ```
 
 ## Credits
