@@ -37,7 +37,6 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 **IME & Input**
 - Enable IME in landscape — hooks `shouldShowCurrentInput()` → true
 - Suppress rotation toast
-- Lock Sogou as preferred IME when folded
 - Sogou toolbar & clipboard fix — restores full keyboard layout on outer screen (uses DexKit)
 - **Known issue**: Scan preview orientation varies by app. Some apps require holding the phone with the camera side down BEFORE opening the scan; others use their own camera logic and work regardless.
 
@@ -143,7 +142,6 @@ AGPL-3.0
 
 **输入法**
 - 横屏键盘启用 + 禁旋转提示
-- 折叠时锁 Sogou 为默认输入法
 - Sogou 工具栏+剪贴板修复（DexKit）
 - **已知问题**：扫一扫预览方向因应用而异。部分应用需在**点击扫一扫前**以靠近摄像头一侧为底才能正常显示；部分应用走自带逻辑无需调整
 
