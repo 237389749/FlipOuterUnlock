@@ -1,5 +1,12 @@
 # FlipOuterUnlock / MIX Flip 外屏解锁模块
 
+> Make the MIX Flip outer screen behave like a normal phone display.
+> 让 MIX Flip 外屏像普通手机屏幕一样工作。
+
+**一句话**：LSPosed 模块，去除外屏挖孔、全屏显示、解除应用启动限制、任意横屏使用键盘、修复 Sogou 输入法工具栏、伪装设备身份。
+
+**One-liner**: LSPosed module — removes outer screen cutout, forces fullscreen, unlocks app launching, enables landscape keyboard, fixes Sogou IME toolbar, spoofs device identity.
+
 [English](#english) | [中文](#chinese)
 
 ---
@@ -20,7 +27,7 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 **Device Identity**
 - Spoof device identity — hooks 7 detection paths: `MiuiMultiDisplayTypeInfo.isFlipDevice()`, `miui.os.Build`, `miuix.os.Build.IS_FLIP`, `DeviceUtils`, `DeviceHelper`, `MiuiConfigs`
 - Spoof screen type — hooks MIUI's `Configuration.getScreenType()` to return 0 (EXPAND)
-- Fix camera preview rotation — hooks `getAdjustedRotation()` to maintain 180° compensation
+- Scan orientation may vary by app — some require holding the camera side down before opening
 
 **App Management**
 - Whitelist all apps for continuity — uses `ContinuityPolicyService` dump injection
@@ -127,7 +134,7 @@ AGPL-3.0
 **设备身份**
 - 伪装设备类型：hook 7 条检测路径（`MiuiMultiDisplayTypeInfo`、`miuix.os.Build` 等）
 - 伪装屏幕类型：`Configuration.getScreenType()` 返回 0
-- 修复相机预览旋转：`getAdjustedRotation()` 保持 180° 补偿
+- 扫一扫预览方向因应用而异——部分需在打开前以摄像头侧为底
 
 **应用管理**
 - 所有应用白名单注入
