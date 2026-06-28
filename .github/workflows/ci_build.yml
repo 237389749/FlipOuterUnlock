@@ -53,12 +53,20 @@ jobs:
 
       - name: Restore signing key
         if: steps.signing.outputs.available == 'true'
+        env:
+          FLIP_SECRET: ${{ secrets.flip_secret }}
         run: |
+          # flip_secret format (4 lines):
+          #   line 1: base64-encoded keystore
+          #   line 2: keystore password
+          #   line 3: key alias
+          #   line 4: key password
+          echo "$FLIP_SECRET" > /tmp/flip_secret.txt
+          sed -n '1p' /tmp/flip_secret.txt | base64 --decode > key.jks
           echo "androidStoreFile=key.jks" >> gradle.properties
-          echo "androidStorePassword=${{ secrets.KEY_STORE_PASSWORD }}" >> gradle.properties
-          echo "androidKeyAlias=${{ secrets.ALIAS }}" >> gradle.properties
-          echo "androidKeyPassword=${{ secrets.KEY_PASSWORD }}" >> gradle.properties
-          echo "${{ secrets.flip_secret }}" | base64 --decode > key.jks
+          echo "androidStorePassword=$(sed -n '2p' /tmp/flip_secret.txt)" >> gradle.properties
+          echo "androidKeyAlias=$(sed -n '3p' /tmp/flip_secret.txt)" >> gradle.properties
+          echo "androidKeyPassword=$(sed -n '4p' /tmp/flip_secret.txt)" >> gradle.properties
 
       - uses: actions/setup-java@v5
         with:
