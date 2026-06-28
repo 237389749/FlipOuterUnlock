@@ -11,7 +11,7 @@ import com.example.flipunlock.hook.WatchOverlayHook
 import com.example.flipunlock.hook.system.CompatConfigHook
 import com.example.flipunlock.hook.system.InputMethodHook
 import com.example.flipunlock.hook.system.InterceptHook
-//import com.example.flipunlock.hook.system.LetterboxHook
+import com.example.flipunlock.hook.system.LetterboxHook
 //import com.example.flipunlock.hook.system.SubScreenGestureHook
 import com.example.flipunlock.hook.system.SystemServicesHook
 import com.example.flipunlock.hook.system.WhitelistHook
@@ -40,7 +40,7 @@ class Main : XposedModule() {
 
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
         CutoutHook.hookFramework(param)
-//        LetterboxHook.hook(param)
+        LetterboxHook.hook(param)
         WhitelistHook.hook(param)
 //        SubScreenGestureHook.hook(param)
         CompatConfigHook.hook(param)
