@@ -12,10 +12,10 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 import java.util.Collections
 
 object CutoutHook : BaseHook() {
+    // Note: camera and AOD need real cutout geometry for UI layout.
+    // Removing them from targets — they get the original Display.getCutout().
     override val targetPackages = listOf(
         "com.android.systemui",
-        "com.miui.aod",
-        "com.android.camera",
     )
 
     private var zeroCutout: DisplayCutout? = null

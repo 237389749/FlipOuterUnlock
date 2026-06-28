@@ -18,8 +18,8 @@ android {
         applicationId = "com.example.flipunlock"
         minSdk = 35
         targetSdk = 36
-        versionCode = 18
-        versionName = "1.17-test-deviceid-full"
+        versionCode = 19
+        versionName = "1.18-fix-camera-rotation"
     }
 
     buildTypes {

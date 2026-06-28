@@ -153,7 +153,8 @@ object DeviceIdentityHook : BaseHook() {
         }.onFailure { log("DeviceIdentity: DeviceHelper not found", it) }
     }
 
-    // ── MiuiConfigs: isFoldableDevice, isFlipTinyScreen, isTinyScreen ───
+    // ── MiuiConfigs: isFoldableDevice, isFlipTinyScreen, isTinyScreen,
+    //                    getAdjustedRotation ──────────────────────────────
     private fun hookMiuiConfigs(param: PackageReadyParam) {
         runCatching {
             val cls = param.classLoader.loadClass("miui.util.MiuiConfigs")
@@ -171,6 +172,18 @@ object DeviceIdentityHook : BaseHook() {
                 val method = cls.method("isTinyScreen", android.content.Context::class.java)
                 hook(method, replaceResult(false))
                 log("DeviceIdentity: blocked MiuiConfigs.isTinyScreen")
+            }
+            // getAdjustedRotation: since isFlipTinyScreen→false removes the
+            // 180° compensation, we re-add it here to fix camera preview
+            // orientation (e.g. WeChat scan, camera apps).
+            runCatching {
+                val method = cls.method("getAdjustedRotation", android.content.Context::class.java)
+                hook(method) { chain ->
+                    val ctx = chain.args[0] as? android.content.Context
+                    val rotation = ctx?.display?.rotation ?: 0
+                    (rotation + 2) % 4
+                }
+                log("DeviceIdentity: forced getAdjustedRotation always +180°")
             }
         }.onFailure { log("DeviceIdentity: MiuiConfigs not found", it) }
     }
