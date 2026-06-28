@@ -18,8 +18,8 @@ android {
         applicationId = "com.example.flipunlock"
         minSdk = 35
         targetSdk = 36
-        versionCode = 11
-        versionName = "1.10-test-sogou2"
+        versionCode = 12
+        versionName = "1.11-test-sogou3"
     }
 
     buildTypes {

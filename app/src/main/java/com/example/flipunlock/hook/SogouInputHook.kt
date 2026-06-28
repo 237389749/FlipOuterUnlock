@@ -4,100 +4,167 @@ import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import org.luckypray.dexkit.DexKitBridge
+import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
 /**
  * Sogou IME fix for outer screen — restore toolbar and clipboard visibility.
- * Ported from MixFlipMod's SogouHook.
+ * Exact port of MixFlipMod's SogouHook.kt.
  *
- * Uses DexKit to find isFlipScreen() (boolean, 0 params) across all Sogou classes.
- * Does NOT depend on specific string constants — searches by method signature only,
- * so it works across different Sogou versions.
+ * Uses DexKit to locate the FlipScreenManager class by the string constant
+ * "flip_old_outer_keyboard", then finds isFlipScreen() within it. This
+ * ensures we hook the correct isFlipScreen method, not any other method
+ * with the same name.
  */
 object SogouInputHook : BaseHook() {
     override val targetPackages = listOf("com.sohu.inputmethod.sogou.xiaomi")
 
     override fun setupHooks(param: PackageReadyParam) {
         safeHook("SogouInputHook") {
-            DexKitBridge.create(param.classLoader, false).use { bridge ->
-                // Find isFlipScreen: boolean, 0 params, anywhere in Sogou
-                val candidates = bridge.findMethod {
-                    matcher {
-                        returnType = "boolean"
-                        paramCount = 0
-                    }
-                }.mapNotNull { runCatching { it.getMethodInstance(param.classLoader) }.getOrNull() }
-                    .filter { m -> m.name == "isFlipScreen" && !Modifier.isStatic(m.modifiers) }
-                    .distinctBy { it.declaringClass }
+            hookToolbarFix(param)
+            hookClipboardFix(param)
+        }
+    }
 
-                val isFlipScreen = candidates.firstOrNull()
-                if (isFlipScreen == null) {
-                    log("SogouFix: isFlipScreen not found, skipping")
-                    return@safeHook
-                }
-                log("SogouFix: found isFlipScreen in ${isFlipScreen.declaringClass.name}")
+    // ── Helpers ──────────────────────────────────────────────────────────
 
-                val fakeFlipScreen = hookScope(isFlipScreen) { false }
+    private fun findManagerClass(bridge: DexKitBridge, classLoader: ClassLoader): Class<*> {
+        val found = bridge.findClass {
+            matcher { usingStrings("flip_old_outer_keyboard") }
+        }.singleOrNull()?.getInstance(classLoader)
+        if (found == null) log("SogouFix: FlipScreenManager class not found — wrong Sogou version?")
+        return found ?: error("FlipScreenManager not found")
+    }
 
-                // ── Toolbar fix ────────────────────────────────────────
-                val toolbarMethods = bridge.findMethod {
-                    matcher {
-                        invokeMethods { add { name = "isFlipScreen" } }
-                    }
-                }.mapNotNull { runCatching { it.getMethodInstance(param.classLoader) }.getOrNull() }
-
-                // Hook all methods that call isFlipScreen for toolbar build
-                for (m in toolbarMethods) {
-                    if (m.parameterCount == 0 && m.returnType == Void.TYPE) {
-                        // Likely buildFunctionList or refreshFunctionList
-                        hook(m) { chain -> fakeFlipScreen.run { chain.proceed() } }
-                        log("SogouFix: toolbar hook on ${m.declaringClass.simpleName}.${m.name}")
-                    }
-                }
-
-                // Find buildFunctionList-like method (returns List or similar)
-                val listBuildingMethods = toolbarMethods.filter { m ->
-                    m.parameterCount in 0..2 && m.returnType != Void.TYPE
-                }
-                if (listBuildingMethods.isNotEmpty()) {
-                    for (m in listBuildingMethods) {
-                        hook(m, Hooker { chain ->
-                            val result = fakeFlipScreen.run { chain.proceed() }
-                            // Try to remove flip-only toolbar items (IDs 6, 1052)
-                            if (result is MutableList<*>) {
-                                runCatching {
-                                    val first = result.firstOrNull() ?: return@runCatching
-                                    val idField = first.javaClass.declaredFields
-                                        .firstOrNull { it.type == Int::class.javaPrimitiveType!! }
-                                        ?.also { it.isAccessible = true }
-                                    if (idField != null) {
-                                        result.removeIf { idField.get(it) as? Int in listOf(6, 1052) }
-                                    }
-                                }
-                            }
-                            result
-                        })
-                        log("SogouFix: list-building hook on ${m.declaringClass.simpleName}.${m.name}")
-                    }
-                }
-
-                // ── Clipboard fix ──────────────────────────────────────
-                // Find methods called during clipboard candidate transitions
-                // that also check isFlipScreen — hook them to run in fake scope
-                val clipboardMethods = bridge.findMethod {
-                    matcher {
-                        usingStrings("ClipboardToCandsController")
-                        invokeMethods { add { name = "isFlipScreen" } }
-                    }
-                }.mapNotNull { runCatching { it.getMethodInstance(param.classLoader) }.getOrNull() }
-
-                for (m in clipboardMethods) {
-                    hook(m) { chain -> fakeFlipScreen.run { chain.proceed() } }
-                    log("SogouFix: clipboard hook on ${m.declaringClass.simpleName}.${m.name}")
-                }
-
-                log("SogouFix: ${candidates.size} isFlipScreen methods, ${toolbarMethods.size} toolbar methods, ${clipboardMethods.size} clipboard methods hooked")
+    private fun findIsFlipScreen(bridge: DexKitBridge, classLoader: ClassLoader, managerClass: Class<*>): Method {
+        val found = bridge.findMethod {
+            matcher {
+                declaredClass(managerClass.name)
+                invokeMethods { add { name = "isFlipScreen" } }
+                returnType = "boolean"
+                paramCount = 0
             }
+        }.firstNotNullOfOrNull { runCatching { it.getMethodInstance(classLoader) }.getOrNull() }
+        if (found == null) log("SogouFix: isFlipScreen not found in ${managerClass.name}")
+        return found ?: error("isFlipScreen not found")
+    }
+
+    private fun hookWithFakeFlipScreen(
+        target: Method,
+        fakeFlipScreen: HookScope,
+        after: ((Any?) -> Any?)? = null,
+    ) {
+        hook(target) { chain ->
+            val result = fakeFlipScreen.run { chain.proceed() }
+            after?.invoke(result) ?: result
+        }
+    }
+
+    // ── Toolbar fix ────────────────────────────────────────────────────
+
+    private fun hookToolbarFix(param: PackageReadyParam) {
+        createDexKitBridge(param.classLoader).use { bridge ->
+            val managerClass = findManagerClass(bridge, param.classLoader)
+            val isFlipScreen = findIsFlipScreen(bridge, param.classLoader, managerClass)
+            val fakeFlipScreen = hookScope(isFlipScreen) { false }
+
+            // buildFunctionList: calls getFlipOrderList + isFlipScreen
+            val buildFunctionList = bridge.findMethod {
+                matcher {
+                    invokeMethods {
+                        add { name = "getFlipOrderList" }
+                        add { name = "isFlipScreen" }
+                    }
+                }
+            }.singleOrNull()?.getMethodInstance(param.classLoader)
+                ?: error("buildFunctionList not found")
+
+            // getSingleton: static, returns managerClass, 0 params
+            val getSingleton = managerClass.declaredMethods.firstOrNull { m ->
+                Modifier.isStatic(m.modifiers) && m.returnType == managerClass && m.parameterCount == 0
+            } ?: error("getSingleton not found")
+
+            hookWithFakeFlipScreen(buildFunctionList, fakeFlipScreen) { result ->
+                runCatching {
+                    if (isFlipScreen.invoke(getSingleton.invoke(null)) as Boolean) {
+                        @Suppress("UNCHECKED_CAST")
+                        val list = result as? ArrayList<Any>
+                        if (!list.isNullOrEmpty()) {
+                            val idField = runCatching {
+                                list[0].javaClass.getDeclaredField("f").also { it.isAccessible = true }
+                            }.onFailure { log("SogouFix: toolbar idField lookup failed", it) }.getOrNull()
+                            if (idField != null) {
+                                list.removeIf { item -> idField.get(item) as? Int in listOf(6, 1052) }
+                            }
+                        }
+                    }
+                }.onFailure { log("SogouFix: hookToolbarFix after failed", it) }
+                result
+            }
+
+            // refreshFunctionList: calls isUpdateFlipImeFunction, same declaring class as buildFunctionList
+            val refreshFunctionList = bridge.findMethod {
+                matcher {
+                    declaredClass(buildFunctionList.declaringClass.name)
+                    invokeMethods { add { name = "isUpdateFlipImeFunction" } }
+                }
+            }.singleOrNull()?.getMethodInstance(param.classLoader)
+                ?: error("refreshFunctionList not found")
+
+            hookWithFakeFlipScreen(refreshFunctionList, fakeFlipScreen)
+            log("SogouFix: toolbar fix hooked")
+        }
+    }
+
+    // ── Clipboard fix ──────────────────────────────────────────────────
+
+    private fun hookClipboardFix(param: PackageReadyParam) {
+        createDexKitBridge(param.classLoader).use { bridge ->
+            val managerClass = findManagerClass(bridge, param.classLoader)
+            val isFlipScreen = findIsFlipScreen(bridge, param.classLoader, managerClass)
+
+            // onCandidateChange: string "ClipboardToCandsController onCandidateChange" + calls isFlipScreen
+            val onCandidateChange = bridge.findMethod {
+                matcher {
+                    usingStrings("ClipboardToCandsController onCandidateChange")
+                    invokeMethods { add { name = "isFlipScreen" } }
+                }
+            }.singleOrNull()?.getMethodInstance(param.classLoader)
+                ?: error("onCandidateChange not found")
+
+            val containerClass = param.classLoader.loadClass(
+                "com.sohu.inputmethod.main.view.IMEInputCandidateViewContainer"
+            )
+
+            val fakeClipboard = hookScope(isFlipScreen) { false }
+                .stopOn(containerClass.method("showClipboardFirstCandidate"))
+            hook(onCandidateChange) { chain ->
+                fakeClipboard.run { chain.proceed() }
+            }
+
+            // showFunctionOrClipboard: void, 0 params, calls both show methods
+            val showFunctionOrClipboard = bridge.findMethod {
+                matcher {
+                    returnType = "void"
+                    paramCount = 0
+                    invokeMethods {
+                        add { name = "showIMEFunctionOrFirstClipboardView" }
+                        add { name = "showIMEFunctionCandidateView" }
+                    }
+                }
+            }.mapNotNull { runCatching { it.getMethodInstance(param.classLoader) }.getOrNull() }
+                .firstOrNull {
+                    it.declaringClass.name.startsWith("com.sohu.inputmethod.main.manager.") &&
+                        Modifier.isPublic(it.modifiers) && !Modifier.isStatic(it.modifiers)
+                } ?: error("showFunctionOrClipboard not found")
+
+            val fakeFunction = hookScope(isFlipScreen) { false }
+                .stopOn(containerClass.method("showIMEFunctionOrFirstClipboardView"))
+            hook(showFunctionOrClipboard) { chain ->
+                fakeFunction.run { chain.proceed() }
+            }
+
+            log("SogouFix: clipboard fix hooked")
         }
     }
 }

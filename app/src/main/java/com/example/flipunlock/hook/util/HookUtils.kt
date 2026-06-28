@@ -3,6 +3,7 @@ package com.example.flipunlock.hook.util
 import android.util.Log
 import com.example.flipunlock.module
 import io.github.libxposed.api.XposedInterface.Chain
+import org.luckypray.dexkit.DexKitBridge
 import io.github.libxposed.api.XposedInterface.HookHandle
 import io.github.libxposed.api.XposedInterface.Hooker
 import java.lang.reflect.Executable
@@ -60,4 +61,9 @@ internal class HookScope(private val active: ThreadLocal<Boolean>) {
         }
         return this
     }
+}
+
+internal fun createDexKitBridge(classLoader: ClassLoader): DexKitBridge {
+    System.loadLibrary("dexkit")
+    return DexKitBridge.create(classLoader, false)
 }
