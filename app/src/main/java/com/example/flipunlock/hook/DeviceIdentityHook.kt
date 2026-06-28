@@ -30,7 +30,7 @@ object DeviceIdentityHook : BaseHook() {
         safeHook("DeviceIdentityHook") {
             hookRootDeviceType(param)       // MiuiMultiDisplayTypeInfo
             hookMiuiBuild(param)            // miui.os.Build
-//            hookMiuixBuildStatic(param)     // miuix.os.Build.IS_FLIP ← 排查中
+            hookMiuixBuildStatic(param)     // miuix.os.Build.IS_FLIP
             hookDeviceUtils(param)          // miuix.device.DeviceUtils
             hookDeviceHelper(param)         // miuix.os.DeviceHelper
             hookMiuiConfigs(param)          // miui.util.MiuiConfigs
