@@ -18,8 +18,8 @@ android {
         applicationId = "com.example.flipunlock"
         minSdk = 35
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.8-test-systemui"
+        versionCode = 10
+        versionName = "1.9-test-sogou"
     }
 
     buildTypes {
@@ -43,4 +43,5 @@ kotlin {
 dependencies {
     compileOnly(libs.libxposed.api)
     implementation(libs.libxposed.service)
+    implementation(libs.dexkit)
 }

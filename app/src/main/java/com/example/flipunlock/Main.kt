@@ -1,6 +1,7 @@
 package com.example.flipunlock
 
 import com.example.flipunlock.hook.ActivityLifecycleHook
+import com.example.flipunlock.hook.SogouInputHook
 import com.example.flipunlock.hook.CutoutHook
 //import com.example.flipunlock.hook.DeviceIdentityHook  // ❌ SystemUI crash loop
 import com.example.flipunlock.hook.WatchOverlayHook
@@ -30,6 +31,7 @@ class Main : XposedModule() {
         CutoutHook,
         SystemUIHook,
 //        GestureHook,
+        SogouInputHook,
         ActivityLifecycleHook,
         WatchOverlayHook,
     )

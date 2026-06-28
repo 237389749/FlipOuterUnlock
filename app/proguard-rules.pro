@@ -12,5 +12,7 @@
     public *** intercept(...);
 }
 
+-keep class io.github.luckypray.dexkit.** { *; }
+
 -repackageclasses
 -allowaccessmodification
