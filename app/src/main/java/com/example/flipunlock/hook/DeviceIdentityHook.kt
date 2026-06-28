@@ -174,8 +174,17 @@ object DeviceIdentityHook : BaseHook() {
                 hook(method, replaceResult(false))
                 log("DeviceIdentity: blocked MiuiConfigs.isTinyScreen")
             }
-            // getAdjustedRotation: removed global +180° fix (broke other apps).
-            // WeChat scan has one working direction; left as-is.
+            // getAdjustedRotation: re-add 180° compensation since isFlipTinyScreen→false.
+            // WeChat excluded above → uses original flip behavior for scan orientation.
+            runCatching {
+                val method = cls.method("getAdjustedRotation", android.content.Context::class.java)
+                hook(method) { chain ->
+                    val ctx = chain.args[0] as? android.content.Context
+                    val rotation = ctx?.display?.rotation ?: 0
+                    (rotation + 2) % 4
+                }
+                log("DeviceIdentity: forced getAdjustedRotation always +180°")
+            }
         }.onFailure { log("DeviceIdentity: MiuiConfigs not found", it) }
     }
 }
