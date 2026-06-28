@@ -101,7 +101,7 @@ androidKeyPassword=<your-password>
 ./gradlew :app:assembleRelease
 ```
 
-For CI, add GitHub Secrets: `KEY_STORE` (base64), `KEY_STORE_PASSWORD`, `ALIAS`, `KEY_PASSWORD`.
+For CI, add GitHub Secrets: `KEYSTORE` (base64), `KEYSTORE_PASSWORD`, `ALIAS`, `KEY_PASSWORD`.
 
 ### Credits
 
@@ -132,8 +132,8 @@ AGPL-3.0
 - 修复冷启动与配置变更时 appBounds
 
 **设备身份**
-- 伪装设备类型：hook 7 条检测路径（`MiuiMultiDisplayTypeInfo`、`miuix.os.Build` 等）
-- 伪装屏幕类型：`Configuration.getScreenType()` 返回 0
+- 伪装设备类型：hook 7 条检测路径（`MiuiMultiDisplayTypeInfo.isFlipDevice()`、`miui.os.Build`、`miuix.os.Build.IS_FLIP`、`DeviceUtils`、`DeviceHelper`、`MiuiConfigs`）
+- 伪装屏幕类型：`Configuration.getScreenType()` → 0
 - 扫一扫预览方向因应用而异——部分需在打开前以摄像头侧为底
 
 **应用管理**
@@ -145,7 +145,7 @@ AGPL-3.0
 - 横屏键盘启用 + 禁旋转提示
 - 折叠时锁 Sogou 为默认输入法
 - Sogou 工具栏+剪贴板修复（DexKit）
-- **已知问题**：扫一扫预览方向因应用而异。部分应用需在**点击扫一扫前**以靠近摄像头一侧为底才能正常显示；部分应用走自带逻辑，无需调整即可正常
+- **已知问题**：扫一扫预览方向因应用而异。部分应用需在**点击扫一扫前**以靠近摄像头一侧为底才能正常显示；部分应用走自带逻辑无需调整
 
 **SystemUI**
 - Widget 覆盖层 4 层禁用
@@ -153,6 +153,12 @@ AGPL-3.0
 - 通知菜单修复
 - 外屏状态栏时钟隐藏
 - 通知图标扩展到 8 个
+
+### 要求
+
+- LSPosed（libxposed API 101+）
+- Xiaomi MIX Flip / MIX Flip 2
+- HyperOS / MIUI
 
 ### 构建与签名
 
@@ -170,7 +176,7 @@ androidKeyPassword=<密码>
 ./gradlew :app:assembleRelease
 ```
 
-CI: GitHub Secrets → `KEY_STORE`(base64), `KEY_STORE_PASSWORD`, `ALIAS`, `KEY_PASSWORD`
+CI: GitHub Secrets → `KEYSTORE`(base64), `KEYSTORE_PASSWORD`, `ALIAS`, `KEY_PASSWORD`
 
 ### 致谢
 
