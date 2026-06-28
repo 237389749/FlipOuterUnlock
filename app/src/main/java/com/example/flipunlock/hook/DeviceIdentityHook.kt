@@ -24,9 +24,12 @@ object DeviceIdentityHook : BaseHook() {
     override val targetPackages = listOf("*")
 
     override fun hook(param: PackageReadyParam) {
-        // SystemUI needs original flip behavior:
-        // TinyKeyguardPanelViewController (lock screen panel)
-        if (param.packageName == "com.android.systemui") return
+        // These packages need original flip behavior:
+        // - SystemUI: TinyKeyguardPanelViewController (lock screen panel)
+        // - Sogou IME: isTinyScreen controls keyboard height on outer screen;
+        //   faking it false makes Sogou render full inner-screen height,
+        //   putting the word suggestion bar under the camera cutout
+        if (param.packageName in setOf("com.android.systemui", "com.sohu.inputmethod.sogou.xiaomi")) return
         safeHook("DeviceIdentityHook") {
             hookRootDeviceType(param)       // MiuiMultiDisplayTypeInfo
             hookMiuiBuild(param)            // miui.os.Build
