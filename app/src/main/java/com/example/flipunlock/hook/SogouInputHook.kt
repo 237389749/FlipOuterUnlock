@@ -167,11 +167,12 @@ object SogouInputHook : BaseHook() {
                         add { name = "showIMEFunctionCandidateView" }
                     }
                 }
-            }.firstOrNull {
-                it.declaringClass.name.startsWith("com.sohu.inputmethod.main.manager.")
-                    && java.lang.reflect.Modifier.isPublic(it.modifiers)
-                    && !java.lang.reflect.Modifier.isStatic(it.modifiers)
-            }?.getMethodInstance(param.classLoader)
+            }.mapNotNull { runCatching { it.getMethodInstance(param.classLoader) }.getOrNull() }
+                .firstOrNull { m ->
+                    m.declaringClass.name.startsWith("com.sohu.inputmethod.main.manager.")
+                        && java.lang.reflect.Modifier.isPublic(m.modifiers)
+                        && !java.lang.reflect.Modifier.isStatic(m.modifiers)
+                }
 
             if (showFunctionOrClipboard != null && stopClass != null) {
                 val showIMEFunction = runCatching {

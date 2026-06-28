@@ -52,4 +52,12 @@ internal class HookScope(private val active: ThreadLocal<Boolean>) {
         active.set(true)
         return runWithCleanup({ active.remove() }, block)
     }
+
+    fun stopOn(origin: Executable): HookScope {
+        hook(origin) { chain ->
+            active.remove()
+            chain.proceed()
+        }
+        return this
+    }
 }
