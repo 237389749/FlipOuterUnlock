@@ -5,8 +5,8 @@ import com.example.flipunlock.hook.SogouInputHook
 import com.example.flipunlock.hook.CutoutHook
 //import com.example.flipunlock.hook.DeviceIdentityHook  // ❌ SystemUI crash loop
 import com.example.flipunlock.hook.WatchOverlayHook
-//import com.example.flipunlock.hook.ScreenTypeHook  // ❌ yellow flash + lockscreen layout issues
-import com.example.flipunlock.hook.SystemUIHook
+//import com.example.flipunlock.hook.ScreenTypeHook  // ⚠️ 内屏样式锁屏无法上滑
+//import com.example.flipunlock.hook.SystemUIHook  // ⚠️ 黄色闪屏排查
 //import com.example.flipunlock.hook.gesture.GestureHook
 import com.example.flipunlock.hook.system.AppBoundsHook
 import com.example.flipunlock.hook.system.CompatConfigHook
@@ -26,10 +26,10 @@ internal var module: Main? = null
 class Main : XposedModule() {
 
     private val hooks = listOf(
-//        ScreenTypeHook,  // ❌ yellow flash + lockscreen layout
+//        ScreenTypeHook,  // ⚠️ 内屏样式锁屏无法上滑
 //        DeviceIdentityHook,  // ❌ SystemUI crash loop
         CutoutHook,
-        SystemUIHook,
+//        SystemUIHook,  // ⚠️ 黄色闪屏排查
 //        GestureHook,
         SogouInputHook,
         ActivityLifecycleHook,
