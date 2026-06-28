@@ -18,8 +18,8 @@ android {
         applicationId = "com.example.flipunlock"
         minSdk = 35
         targetSdk = 36
-        versionCode = 8
-        versionName = "1.7-test-gesturex2"
+        versionCode = 9
+        versionName = "1.8-test-systemui"
     }
 
     buildTypes {
