@@ -43,9 +43,9 @@ jobs:
       - name: Check signing key availability
         id: signing
         env:
-          KEY_STORE: ${{ secrets.KEY_STORE }}
+          FLIP_SECRET: ${{ secrets.flip_secret }}
         run: |
-          if [ -n "${KEY_STORE}" ]; then
+          if [ -n "${FLIP_SECRET}" ]; then
             echo "available=true" >> $GITHUB_OUTPUT
           else
             echo "available=false" >> $GITHUB_OUTPUT
@@ -58,7 +58,7 @@ jobs:
           echo "androidStorePassword=${{ secrets.KEY_STORE_PASSWORD }}" >> gradle.properties
           echo "androidKeyAlias=${{ secrets.ALIAS }}" >> gradle.properties
           echo "androidKeyPassword=${{ secrets.KEY_PASSWORD }}" >> gradle.properties
-          echo "${{ secrets.KEY_STORE }}" | base64 --decode > key.jks
+          echo "${{ secrets.flip_secret }}" | base64 --decode > key.jks
 
       - uses: actions/setup-java@v5
         with:

@@ -174,8 +174,7 @@ object DeviceIdentityHook : BaseHook() {
                 log("DeviceIdentity: blocked MiuiConfigs.isTinyScreen")
             }
             // getAdjustedRotation: since isFlipTinyScreen→false removes the
-            // 180° compensation, we re-add it here to fix camera preview
-            // orientation (e.g. WeChat scan, camera apps).
+            // 180° compensation, re-add it for MIUI framework consumers.
             runCatching {
                 val method = cls.method("getAdjustedRotation", android.content.Context::class.java)
                 hook(method) { chain ->

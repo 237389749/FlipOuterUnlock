@@ -8,3 +8,7 @@
 /captures
 .claude/
 *.stackdump
+flip.jks
+flip.jks.b64
+key.txt
+*.jks
