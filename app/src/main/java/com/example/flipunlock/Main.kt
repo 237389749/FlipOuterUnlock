@@ -3,7 +3,7 @@ package com.example.flipunlock
 import com.example.flipunlock.hook.ActivityLifecycleHook
 import com.example.flipunlock.hook.SogouInputHook
 import com.example.flipunlock.hook.CutoutHook
-//import com.example.flipunlock.hook.DeviceIdentityHook  // ❌ SystemUI crash loop
+import com.example.flipunlock.hook.DeviceIdentityHook
 import com.example.flipunlock.hook.WatchOverlayHook
 //import com.example.flipunlock.hook.ScreenTypeHook  // ⚠️ 内屏样式锁屏无法上滑
 import com.example.flipunlock.hook.SystemUIHook
@@ -27,7 +27,7 @@ class Main : XposedModule() {
 
     private val hooks = listOf(
 //        ScreenTypeHook,  // ⚠️ 内屏样式锁屏无法上滑
-//        DeviceIdentityHook,  // ❌ SystemUI crash loop
+        DeviceIdentityHook,  // ← IS_FLIP 已注释排查中
         CutoutHook,
         SystemUIHook,
 //        GestureHook,
