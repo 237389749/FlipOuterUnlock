@@ -24,6 +24,9 @@ object DeviceIdentityHook : BaseHook() {
     override val targetPackages = listOf("*")
 
     override fun hook(param: PackageReadyParam) {
+        // SystemUI needs isFlipDevice()=true for TinyKeyguardPanelViewController
+        // (lock screen panel). Skip this process to avoid NPE crash.
+        if (param.packageName == "com.android.systemui") return
         safeHook("DeviceIdentityHook") {
             hookRootDeviceType(param)       // MiuiMultiDisplayTypeInfo
             hookMiuiBuild(param)            // miui.os.Build
