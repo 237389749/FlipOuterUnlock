@@ -83,7 +83,7 @@ object LauncherDensityHook : BaseHook() {
                     doChangeDensity.invoke(null, config, resources, 0)
 
                     densityApplied = true
-                    log("LauncherDensity: set densityDpi ${currentDpi}→$TARGET_DENSITY_DPI")
+                    log("LauncherDensity: set densityDpi ${metrics.densityDpi}→$TARGET_DENSITY_DPI")
                 }.onFailure { log("LauncherDensity: failed to apply", it) }
                 result
             })
