@@ -101,6 +101,12 @@ For CI, add GitHub Secrets: `KEY_STORE` (base64), `KEY_STORE_PASSWORD`, `ALIAS`,
 - [MixFlipMod](https://github.com/parallelcc/MixFlipMod) by Parallelc — reference for LSPosed architecture, SogouHook, DexKit usage, SystemUI hooks, and hook utilities
 - Reverse engineering references in `refMD/cleaned/` (decompiled MIUI framework, services, fliphome APKs)
 
+### TODO
+
+- **GestureHook** — Keep fliphome gesture engine alive while disabling FlipLauncher (gestures not working)
+- **SubScreenGestureHook** — Enable system-level multi-finger gestures on external display (no effect)
+- **ScreenTypeHook** — Spoof `Configuration.getScreenType()` → 0 (inner-screen lockscreen breaks swipe-to-unlock)
+
 ### License
 
 AGPL-3.0
@@ -163,6 +169,12 @@ CI: GitHub Secrets → `KEY_STORE`(base64), `KEY_STORE_PASSWORD`, `ALIAS`, `KEY_
 
 - [MixFlipMod](https://github.com/parallelcc/MixFlipMod) by Parallelc — LSPosed 架构、SogouHook、DexKit、SystemUI hook 及工具类参考
 - `refMD/cleaned/` — MIUI 框架及 fliphome 反编译参考文档
+
+### TODO
+
+- **GestureHook** — Keep fliphome gesture engine alive while disabling FlipLauncher (gestures not working)
+- **SubScreenGestureHook** — Enable system-level multi-finger gestures on external display (no effect)
+- **ScreenTypeHook** — Spoof `Configuration.getScreenType()` → 0 (inner-screen lockscreen breaks swipe-to-unlock)
 
 ### License
 
