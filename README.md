@@ -112,6 +112,7 @@ For CI, add GitHub Secrets: `KEYSTORE` (base64), `KEYSTORE_PASSWORD`, `ALIAS`, `
 - **GestureHook** — Keep fliphome gesture engine alive while disabling FlipLauncher (gestures not working)
 - **SubScreenGestureHook** — Enable system-level multi-finger gestures on external display (no effect)
 - **ScreenTypeHook** — Spoof `Configuration.getScreenType()` → 0 (inner-screen lockscreen breaks swipe-to-unlock)
+- **LauncherDensityHook** — Lower density for inner launcher on outer screen (not working)
 
 ### License
 
@@ -186,6 +187,7 @@ CI: GitHub Secrets → `KEYSTORE`(base64), `KEYSTORE_PASSWORD`, `ALIAS`, `KEY_PA
 - **GestureHook** — 禁用 FlipLauncher 同时保活 fliphome 手势引擎（手势不生效）
 - **SubScreenGestureHook** — 启用系统级外屏多指手势（无效果）
 - **ScreenTypeHook** — 伪装 `Configuration.getScreenType()` → 0（内屏样式锁屏无法上滑解锁）
+- **LauncherDensityHook** — 降低内屏桌面在外屏的 density 以改善布局（不生效）
 
 ### License
 
