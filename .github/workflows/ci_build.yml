@@ -42,10 +42,8 @@ jobs:
 
       - name: Check signing key availability
         id: signing
-        env:
-          KEYSTORE: ${{ secrets.KEYSTORE }}
         run: |
-          if [ -n "${KEYSTORE}" ]; then
+          if [ -n "${{ secrets.KEYSTORE }}" ] && [ -n "${{ secrets.KEYSTORE_PASSWORD }}" ] && [ -n "${{ secrets.ALIAS }}" ] && [ -n "${{ secrets.KEY_PASSWORD }}" ]; then
             echo "available=true" >> $GITHUB_OUTPUT
           else
             echo "available=false" >> $GITHUB_OUTPUT
