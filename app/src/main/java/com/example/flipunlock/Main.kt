@@ -2,7 +2,7 @@ package com.example.flipunlock
 
 import com.example.flipunlock.hook.ActivityLifecycleHook
 import com.example.flipunlock.hook.CutoutHook
-//import com.example.flipunlock.hook.DeviceIdentityHook
+import com.example.flipunlock.hook.DeviceIdentityHook
 import com.example.flipunlock.hook.WatchOverlayHook
 //import com.example.flipunlock.hook.ScreenTypeHook
 //import com.example.flipunlock.hook.SystemUIHook
@@ -26,7 +26,7 @@ class Main : XposedModule() {
 
     private val hooks = listOf(
 //        ScreenTypeHook,
-//        DeviceIdentityHook,
+        DeviceIdentityHook,
         CutoutHook,
 //        SystemUIHook,
 //        GestureHook,
