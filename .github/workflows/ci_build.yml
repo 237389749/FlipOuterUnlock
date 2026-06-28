@@ -94,8 +94,15 @@ jobs:
             echo "suffix=${{ github.sha }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Upload APK
+      - name: Upload APK (artifact)
         uses: actions/upload-artifact@v5
         with:
           path: ${{ env.APK_GLOB }}
           name: FlipOuterUnlock_${{ steps.artifact_name.outputs.suffix }}
+
+      - name: Create Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.APK_GLOB }}
+          name: FlipOuterUnlock ${{ github.ref_name }}
