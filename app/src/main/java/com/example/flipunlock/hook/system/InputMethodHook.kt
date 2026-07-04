@@ -10,6 +10,7 @@ object InputMethodHook {
         safeHook("InputMethodHook") {
             hookShouldShowCurrentInput(param)
             hookMakeRotateToast(param)
+            hookIsFlipTinyScreen(param)
         }
     }
 
@@ -33,5 +34,22 @@ object InputMethodHook {
             hook(method, replaceResult(null))
             log("suppressed makeRotateToast")
         }.onFailure { log("failed to hook makeRotateToast", it) }
+    }
+
+    // ── Unlock IME: prevent forced Sogou switch on outer screen ─────────
+    // SogouInputMethodSwitcher.mayChangeInputMethodLocked() checks
+    // InputMethodManagerServiceImpl.getInstance().isFlipTinyScreen()
+    // to decide whether to auto-switch to Sogou. This method may not
+    // go through MiuiConfigs — it could be independently implemented.
+    // Force false to allow any IME on the outer screen.
+    private fun hookIsFlipTinyScreen(param: SystemServerStartingParam) {
+        runCatching {
+            val immServiceClass = param.classLoader.loadClass(
+                "com.android.server.inputmethod.InputMethodManagerServiceImpl"
+            )
+            val method = immServiceClass.method("isFlipTinyScreen")
+            hook(method, replaceResult(false))
+            log("forced InputMethodManagerServiceImpl.isFlipTinyScreen -> false")
+        }.onFailure { log("failed to hook isFlipTinyScreen", it) }
     }
 }
