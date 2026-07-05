@@ -3,9 +3,9 @@
 > Make the MIX Flip outer screen behave like a normal phone display.
 > 让 MIX Flip 外屏像普通手机屏幕一样工作。
 
-**一句话**：LSPosed 模块，去除外屏挖孔、全屏显示、解除应用启动限制、任意横屏使用键盘、修复 Sogou 输入法工具栏、伪装设备身份。
+**一句话**：LSPosed 模块，去除外屏挖孔、全屏显示、解除应用限制、自由切换输入法、解除强制 Sogou 锁定、修复输入法工具栏、伪装设备身份。
 
-**One-liner**: LSPosed module — removes outer screen cutout, forces fullscreen, unlocks app launching, enables landscape keyboard, fixes Sogou IME toolbar, spoofs device identity.
+**One-liner**: LSPosed module — removes outer screen cutout, forces fullscreen, unlocks apps, frees IME choice (no forced Sogou), enables landscape keyboard, fixes Sogou toolbar, spoofs device identity.
 
 [English](#english) | [中文](#chinese)
 
@@ -37,6 +37,7 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 **IME & Input**
 - Enable IME in landscape — hooks `shouldShowCurrentInput()` → true
 - Suppress rotation toast
+- Unlock IME choice — hooks `InputMethodManagerServiceImpl.isFlipTinyScreen()` → false, preventing forced Sogou switch on outer screen
 - Sogou toolbar & clipboard fix — restores full keyboard layout on outer screen (uses DexKit)
 - **Known issue**: Scan preview orientation varies by app. Some apps require holding the phone with the camera side down BEFORE opening the scan; others use their own camera logic and work regardless.
 
@@ -143,6 +144,7 @@ AGPL-3.0
 
 **输入法**
 - 横屏键盘启用 + 禁旋转提示
+- 解除输入法锁定 — hook `InputMethodManagerServiceImpl.isFlipTinyScreen()` → false，阻止外屏强制切 Sogou
 - Sogou 工具栏+剪贴板修复（DexKit）
 - **已知问题**：扫一扫预览方向因应用而异。部分应用需在**点击扫一扫前**以靠近摄像头一侧为底才能正常显示；部分应用走自带逻辑无需调整
 
