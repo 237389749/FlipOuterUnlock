@@ -31,21 +31,6 @@ object AodHook : BaseHook() {
                 }
             }
             log("AodHook: outer screen isAodEnable forced true, inner screen normal")
-
-            // isFolded: DeviceIdentityHook makes isFlipDevice→false, so the
-            // flip branch is skipped. isFoldDevice is false (Mix Flip is not
-            // a large fold). So isFolded always returns false — force true.
-            val foldedMethod = utilsClass.method("isFolded", android.content.Context::class.java)
-            hook(foldedMethod) { chain ->
-                val ctx = chain.args[0] as? android.content.Context
-                val metrics = ctx?.resources?.displayMetrics
-                if (metrics != null && metrics.heightPixels in 1000..1500) {
-                    true
-                } else {
-                    chain.proceed()
-                }
-            }
-            log("AodHook: outer screen isFolded forced true")
         }.onFailure { log("AodHook: failed", it) }
     }
 }
