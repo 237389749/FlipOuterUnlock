@@ -1,11 +1,14 @@
 package com.example.flipunlock.hook
 
+import android.content.SharedPreferences
 import android.graphics.Insets
 import android.graphics.Path
 import android.graphics.Rect
 import android.view.Display
 import android.view.DisplayCutout
+import com.example.flipunlock.Prefs
 import com.example.flipunlock.hook.util.*
+import com.example.flipunlock.module
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
@@ -20,14 +23,29 @@ object CutoutHook : BaseHook() {
 
     private var zeroCutout: DisplayCutout? = null
 
+    @Volatile
+    private var globalFullscreen = true
+
+    private fun initPrefs() {
+        val prefs = module?.getRemotePreferences(Prefs.NAME) ?: return
+        globalFullscreen = prefs.getBoolean(Prefs.GLOBAL_FULLSCREEN, false)
+        prefs.registerOnSharedPreferenceChangeListener { _, key ->
+            if (key == Prefs.GLOBAL_FULLSCREEN) {
+                globalFullscreen = prefs.getBoolean(Prefs.GLOBAL_FULLSCREEN, false)
+            }
+        }
+    }
+
     fun hookFramework(param: SystemServerStartingParam) {
         safeHook("CutoutHook-framework") {
+            initPrefs()
             hookCutoutParser(param.classLoader)
             hookDisplayGetCutout()
         }
     }
 
     override fun setupHooks(param: PackageReadyParam) {
+        initPrefs()
         hookCutoutParser(param.classLoader)
         hookDisplayGetCutout()
         hookDisplayUtilsGetCutoutPosition(param)
@@ -57,14 +75,9 @@ object CutoutHook : BaseHook() {
     private fun hookDisplayGetCutout() {
         runCatching {
             val getCutoutMethod = Display::class.java.method("getCutout")
-            // beforeHookedMethod: replace result with zero cutout, or proceed if unavailable
             hook(getCutoutMethod, Hooker { chain ->
-                val zero = getZeroCutout()
-                if (zero != null) {
-                    zero
-                } else {
-                    chain.proceed()
-                }
+                if (!globalFullscreen) return@Hooker chain.proceed()
+                getZeroCutout() ?: chain.proceed()
             })
         }.onFailure { log("CutoutFix: failed hook Display.getCutout", it) }
     }
