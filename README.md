@@ -1,5 +1,7 @@
 # FlipOuterUnlock / MIX Flip 外屏解锁模块
 
+> **`master`** — UI 分支（带 Compose 设置界面） | **`main`** — 稳定分支（纯 hook 无界面）
+>
 > Make the MIX Flip outer screen behave like a normal phone display.
 > 让 MIX Flip 外屏像普通手机屏幕一样工作。
 
