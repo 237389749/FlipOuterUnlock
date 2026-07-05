@@ -47,7 +47,7 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 - Notification menu fix — restores long-press menu via `isTinyScreen` scope faking
 - Status bar clock hidden on outer screen
 - Status bar icon expansion — shows up to 8 notification icons
-- Always-On Display enabled on outer screen when folded (experimental)
+- Always-On Display enabled on outer screen when folded (works, minor style issues)
 
 **UI (in development, master branch)**
 - GUI settings based on MixFlipMod's Compose/Miuix architecture
@@ -58,22 +58,30 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 
 ```
 onSystemServerStarting (system_server):
-├── CutoutHook.hookFramework
-├── LetterboxHook
-├── WhitelistHook
-├── CompatConfigHook
-├── AppBoundsHook
-├── SystemServicesHook
-├── InputMethodHook
-└── InterceptHook
+├── CutoutHook.hookFramework  → Display.getCutout + Parser
+├── LetterboxHook             → isLetterboxedForDisplayCutout → false
+├── WhitelistHook             → ContinuityPolicyService dump
+├── CompatConfigHook          → continuity.policy + PROPERTY_COMPAT
+├── AppBoundsHook             → fillInsetsState + LaunchActivityItem
+├── SystemServicesHook        → BoundsCompatUtils + getFullScreenValue
+├── InputMethodHook           → shouldShowCurrentInput + isFlipTinyScreen
+└── InterceptHook             → isInterceptListUnCheckFold
 
 onPackageReady:
-├── DeviceIdentityHook [* except SystemUI]
+├── DeviceIdentityHook [* excl. SystemUI, Sogou]
 ├── CutoutHook [systemui, aod, camera]
-├── SystemUIHook [systemui]
-├── SogouInputHook [sogou]
-├── ActivityLifecycleHook [*]
-└── WatchOverlayHook [fliphome]
+├── SystemUIHook [systemui]   → widget, notification, clock, icons
+├── AodHook [aod]             → isAodEnable → true on outer screen
+├── SogouInputHook [sogou]    → toolbar + clipboard (DexKit)
+├── ActivityLifecycleHook [*] → layoutInDisplayCutoutMode=ALWAYS
+└── WatchOverlayHook [fliphome] → 4-layer widget defense
+
+Commented out (WIP):
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+├── GestureHook           → fliphome gesture engine keep-alive
+├── SubScreenGestureHook  → system-level multi-finger gestures
+├── ScreenTypeHook        → Configuration.getScreenType() → 0
+└── LauncherDensityHook   → inner launcher density tweak
 ```
 
 ### Requirements
@@ -120,7 +128,7 @@ For CI, add GitHub Secrets: `KEYSTORE` (base64), `KEYSTORE_PASSWORD`, `ALIAS`, `
 - **SubScreenGestureHook** — Enable system-level multi-finger gestures on external display (no effect)
 - **ScreenTypeHook** — Spoof `Configuration.getScreenType()` → 0 (inner-screen lockscreen breaks swipe-to-unlock)
 - **LauncherDensityHook** — Lower density for inner launcher on outer screen (not working)
-- **AodHook** — Enable AOD on outer screen when folded (flashing, can't turn off)
+- **AodHook** — Enable AOD on outer screen when folded (works, minor display style issues)
 
 ### License
 
@@ -161,7 +169,7 @@ AGPL-3.0
 - 通知菜单修复
 - 外屏状态栏时钟隐藏
 - 通知图标扩展到 8 个
-- 折叠状态下外屏 AOD 启用（实验性）
+- 折叠状态下外屏 AOD 启用（已可用，样式有小问题）
 
 ### 要求
 
@@ -198,7 +206,7 @@ CI: GitHub Secrets → `KEYSTORE`(base64), `KEYSTORE_PASSWORD`, `ALIAS`, `KEY_PA
 - **SubScreenGestureHook** — 启用系统级外屏多指手势（无效果）
 - **ScreenTypeHook** — 伪装 `Configuration.getScreenType()` → 0（内屏样式锁屏无法上滑解锁）
 - **LauncherDensityHook** — 降低内屏桌面在外屏的 density 以改善布局（不生效）
-- **AodHook** — 折叠状态下外屏 AOD（闪烁、无法关闭）
+- **AodHook** — 折叠状态下外屏 AOD（已可用，样式有小问题）
 - **Global fullscreen toggle** — 全局全屏开关 UI 已可显示，但偏好写入未生效（LSPosed RemoteSharedPreferences 存疑）
 - **Per-app fullscreen** — 已移除。核心 hook（BoundsCompatUtils、CompatConfig、AppBounds、Letterbox）运行在 system_server 层，无法 per-app 粒度假货，只能全局 ON/OFF
 
