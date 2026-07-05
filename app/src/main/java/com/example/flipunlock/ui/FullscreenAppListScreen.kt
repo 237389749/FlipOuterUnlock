@@ -3,9 +3,7 @@
 package com.example.flipunlock.ui
 
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,9 +32,7 @@ fun FullscreenAppListScreen(onBack: () -> Unit) {
         context.getSharedPreferences(Prefs.NAME, Context.MODE_PRIVATE)
     }
 
-    val apps = remember {
-        loadInstalledApps(context)
-    }
+    val apps = remember { loadInstalledApps(context) }
 
     var searchQuery by remember { mutableStateOf("") }
     val filteredApps = remember(apps, searchQuery) {
@@ -47,7 +43,6 @@ fun FullscreenAppListScreen(onBack: () -> Unit) {
         }
     }
 
-    // Track per-app state
     val appStates = remember {
         mutableStateMapOf<String, Boolean>().apply {
             apps.forEach { put(it.packageName, prefs.getBoolean(Prefs.fullscreenKey(it.packageName), false)) }
@@ -55,7 +50,6 @@ fun FullscreenAppListScreen(onBack: () -> Unit) {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Top bar
         TopAppBar(
             title = { Text("应用全屏设置") },
             navigationIcon = {
@@ -65,7 +59,6 @@ fun FullscreenAppListScreen(onBack: () -> Unit) {
             }
         )
 
-        // Search
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -77,7 +70,6 @@ fun FullscreenAppListScreen(onBack: () -> Unit) {
             singleLine = true
         )
 
-        // App list
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp)
@@ -105,7 +97,7 @@ fun FullscreenAppListScreen(onBack: () -> Unit) {
                         }
                         Switch(
                             checked = appStates[app.packageName] ?: false,
-                            onCheckedChange = { checked ->
+                            onCheckedChange = { checked: Boolean ->
                                 appStates[app.packageName] = checked
                                 prefs.edit().putBoolean(Prefs.fullscreenKey(app.packageName), checked).apply()
                             }

@@ -1,15 +1,24 @@
 package com.example.flipunlock.ui
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -18,7 +27,7 @@ import com.example.flipunlock.Prefs
 @Composable
 fun MainScreen() {
     val context = LocalContext.current
-    val prefs = remember {
+    val prefs: SharedPreferences = remember {
         context.getSharedPreferences(Prefs.NAME, Context.MODE_PRIVATE)
     }
 
@@ -28,7 +37,6 @@ fun MainScreen() {
     }
     var showAppList by remember { mutableStateOf(false) }
 
-    // Tip dialog
     if (showTip) {
         AlertDialog(
             onDismissRequest = { showTip = false },
@@ -71,7 +79,6 @@ fun MainScreen() {
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        // Help button
         TextButton(
             onClick = { showTip = true },
             modifier = Modifier.padding(bottom = 12.dp)
@@ -100,9 +107,9 @@ fun MainScreen() {
                 }
                 Switch(
                     checked = globalFullscreen,
-                    onCheckedChange = {
-                        globalFullscreen = it
-                        prefs.edit().putBoolean(Prefs.GLOBAL_FULLSCREEN, it).apply()
+                    onCheckedChange = { enabled: Boolean ->
+                        globalFullscreen = enabled
+                        prefs.edit().putBoolean(Prefs.GLOBAL_FULLSCREEN, enabled).apply()
                     }
                 )
             }
@@ -116,6 +123,7 @@ fun MainScreen() {
                 .fillMaxWidth()
                 .clickable(enabled = !globalFullscreen) { showAppList = true }
         ) {
+            val dimmed = globalFullscreen
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -127,7 +135,7 @@ fun MainScreen() {
                     Icon(
                         Icons.Filled.Apps,
                         contentDescription = null,
-                        tint = if (globalFullscreen)
+                        tint = if (dimmed)
                             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
                         else
                             MaterialTheme.colorScheme.onSurface
@@ -137,13 +145,13 @@ fun MainScreen() {
                         Text(
                             "应用全屏设置",
                             fontWeight = FontWeight.Medium,
-                            color = if (globalFullscreen)
+                            color = if (dimmed)
                                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
                             else
                                 MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            if (globalFullscreen) "全局全屏已开启，无需单独设置"
+                            if (dimmed) "全局全屏已开启，无需单独设置"
                             else "选择哪些应用强制全屏",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
@@ -155,7 +163,6 @@ fun MainScreen() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // LSPosed reminder
         Card(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
