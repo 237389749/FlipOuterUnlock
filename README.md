@@ -49,29 +49,32 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 - Notification menu fix — restores long-press menu via `isTinyScreen` scope faking
 - Status bar clock hidden on outer screen
 - Status bar icon expansion — shows up to 8 notification icons
-- Always-On Display enabled on outer screen when folded (experimental)
+- Always-On Display enabled on outer screen when folded (works, minor style issues)
 
 ### Hook Architecture
 
 ```
 onSystemServerStarting (system_server):
-├── CutoutHook.hookFramework
-├── LetterboxHook
-├── WhitelistHook
-├── CompatConfigHook
-├── AppBoundsHook
-├── SystemServicesHook
-├── InputMethodHook
-└── InterceptHook
+├── CutoutHook.hookFramework  → Display.getCutout + Parser
+├── LetterboxHook             → isLetterboxedForDisplayCutout → false
+├── WhitelistHook             → ContinuityPolicyService dump
+├── CompatConfigHook          → continuity.policy + PROPERTY_COMPAT
+├── AppBoundsHook             → fillInsetsState + LaunchActivityItem
+├── SystemServicesHook        → BoundsCompatUtils + getFullScreenValue
+├── InputMethodHook           → shouldShowCurrentInput + isFlipTinyScreen
+└── InterceptHook             → isInterceptListUnCheckFold
 
 onPackageReady:
-├── DeviceIdentityHook [* except SystemUI]
+├── DeviceIdentityHook [* excl. SystemUI, Sogou]
 ├── CutoutHook [systemui, aod, camera]
-├── SystemUIHook [systemui]
-├── SogouInputHook [sogou]
-├── ActivityLifecycleHook [*]
-└── WatchOverlayHook [fliphome]
+├── SystemUIHook [systemui]   → widget, notification, clock, icons
+├── AodHook [aod]             → isAodEnable → true on outer screen
+├── SogouInputHook [sogou]    → toolbar + clipboard (DexKit)
+├── ActivityLifecycleHook [*] → layoutInDisplayCutoutMode=ALWAYS
+└── WatchOverlayHook [fliphome] → 4-layer widget defense
 ```
+
+> **master 分支** 另有 GestureHook、SubScreenGestureHook、ScreenTypeHook、LauncherDensityHook（开发中，已注释）。
 
 ### Requirements
 
@@ -158,7 +161,7 @@ AGPL-3.0
 - 通知菜单修复
 - 外屏状态栏时钟隐藏
 - 通知图标扩展到 8 个
-- 折叠状态下外屏 AOD 启用（实验性）
+- 折叠状态下外屏 AOD 启用（已可用，样式有小问题）
 
 ### 要求
 
