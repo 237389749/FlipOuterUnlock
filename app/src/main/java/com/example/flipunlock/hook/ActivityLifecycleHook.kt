@@ -21,7 +21,7 @@ object ActivityLifecycleHook : BaseHook() {
 
     private fun shouldHook(pkg: String): Boolean {
         val prefs = module?.getRemotePreferences(Prefs.NAME) ?: return true
-        if (!prefs.getBoolean(Prefs.GLOBAL_FULLSCREEN, true)) return false
+        if (!prefs.getBoolean(Prefs.GLOBAL_FULLSCREEN, false)) return false
         return prefs.getBoolean(Prefs.fullscreenKey(pkg), false)
     }
 
