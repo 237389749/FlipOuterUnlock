@@ -1,6 +1,7 @@
 package com.example.flipunlock
 
 import com.example.flipunlock.hook.ActivityLifecycleHook
+import com.example.flipunlock.hook.AodHook
 //import com.example.flipunlock.hook.LauncherDensityHook  // TODO: density tweak not working
 import com.example.flipunlock.hook.SogouInputHook
 import com.example.flipunlock.hook.CutoutHook
@@ -33,6 +34,7 @@ class Main : XposedModule() {
         SystemUIHook,
 //        GestureHook,
 //        LauncherDensityHook,  // TODO: density tweak not working
+        AodHook,
         SogouInputHook,
         ActivityLifecycleHook,
         WatchOverlayHook,

@@ -47,6 +47,7 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 - Notification menu fix — restores long-press menu via `isTinyScreen` scope faking
 - Status bar clock hidden on outer screen
 - Status bar icon expansion — shows up to 8 notification icons
+- Always-On Display enabled on outer screen when folded (experimental)
 
 ### Hook Architecture
 
@@ -154,6 +155,7 @@ AGPL-3.0
 - 通知菜单修复
 - 外屏状态栏时钟隐藏
 - 通知图标扩展到 8 个
+- 折叠状态下外屏 AOD 启用（实验性）
 
 ### 要求
 
