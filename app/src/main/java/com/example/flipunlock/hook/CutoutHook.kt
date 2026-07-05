@@ -44,8 +44,9 @@ object CutoutHook : BaseHook() {
         runCatching {
             val parserClass = classLoader.loadClass("android.view.CutoutSpecification\$Parser")
             val parseMethod = parserClass.method("parse", String::class.java)
-            // afterHookedMethod: modify parse result in-place
+            // afterHookedMethod: modify parse result in-place (only if enabled)
             hook(parseMethod, after { chain, result ->
+                if (!isFullscreenEnabled()) return@after result
                 val spec = result ?: return@after result
                 val originalSpec = chain.args[0] as? String ?: return@after result
                 if (originalSpec.contains("M 604,664") || originalSpec.contains("@bind_right_cutout")) {
