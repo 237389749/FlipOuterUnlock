@@ -1,5 +1,6 @@
 package com.example.flipunlock.hook
 
+import android.util.DisplayMetrics
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
@@ -17,8 +18,8 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 object LauncherDensityHook : BaseHook() {
     override val targetPackages = listOf("com.miui.home")
 
-    // Target ~520→320: gives ~604dp on 1208px width
-    private const val TARGET_DENSITY_DPI = 320
+    // Target ~520→320 (DENSITY_XHIGH): gives ~604dp on 1208px width
+    private val TARGET_DENSITY_DPI = DisplayMetrics.DENSITY_XHIGH
 
     private var densityApplied = false
 
