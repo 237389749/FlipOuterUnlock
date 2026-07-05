@@ -27,8 +27,7 @@ object DeviceIdentityHook : BaseHook() {
         // These packages need original flip behavior:
         // - SystemUI: TinyKeyguardPanelViewController (lock screen panel)
         // - Sogou IME: isTinyScreen controls keyboard height on outer screen
-        // - AOD: display registration may depend on isFlipDevice
-        if (param.packageName in setOf("com.android.systemui", "com.sohu.inputmethod.sogou.xiaomi", "com.miui.aod")) return
+        if (param.packageName in setOf("com.android.systemui", "com.sohu.inputmethod.sogou.xiaomi")) return
         safeHook("DeviceIdentityHook") {
             hookRootDeviceType(param)       // MiuiMultiDisplayTypeInfo
             hookMiuiBuild(param)            // miui.os.Build
