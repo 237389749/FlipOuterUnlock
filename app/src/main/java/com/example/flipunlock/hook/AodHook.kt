@@ -21,16 +21,20 @@ object AodHook : BaseHook() {
 
             val enableMethod = utilsClass.method("isAodEnable", android.content.Context::class.java)
             hook(enableMethod) { chain ->
+                val original = chain.proceed() as? Boolean ?: false
                 val ctx = chain.args[0] as? android.content.Context
                 val metrics = ctx?.resources?.displayMetrics
-                if (metrics != null && metrics.heightPixels in 1000..1500) {
-                    // Outer screen: bypass FlipLinkageStyleController gate
+                // Only force true on outer screen if AOD is enabled in Settings.
+                // isFlipDevice is already false (DeviceIdentityHook), so the
+                // FlipLinkageStyleController gate is bypassed — original
+                // reflects isAodSettingsEnabled().
+                if (!original && metrics != null && metrics.heightPixels in 1000..1500) {
                     true
                 } else {
-                    chain.proceed()
+                    original
                 }
             }
-            log("AodHook: outer screen isAodEnable forced true, inner screen normal")
+            log("AodHook: isAodEnable hooked — respects user setting on outer screen")
         }.onFailure { log("AodHook: failed", it) }
     }
 }
