@@ -49,6 +49,11 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 - Status bar icon expansion — shows up to 8 notification icons
 - Always-On Display enabled on outer screen when folded (experimental)
 
+**UI (in development, master branch)**
+- GUI settings based on MixFlipMod's Compose/Miuix architecture
+- Known issue: LSPosed RemoteSharedPreferences sync between UI process and hook processes not working — toggle writes not reflected in hooks
+- Architecture constraint: 4 core hooks run in system_server, cannot be applied per-app — only global on/off makes sense
+
 ### Hook Architecture
 
 ```
@@ -194,6 +199,8 @@ CI: GitHub Secrets → `KEYSTORE`(base64), `KEYSTORE_PASSWORD`, `ALIAS`, `KEY_PA
 - **ScreenTypeHook** — 伪装 `Configuration.getScreenType()` → 0（内屏样式锁屏无法上滑解锁）
 - **LauncherDensityHook** — 降低内屏桌面在外屏的 density 以改善布局（不生效）
 - **AodHook** — 折叠状态下外屏 AOD（闪烁、无法关闭）
+- **Global fullscreen toggle** — 全局全屏开关 UI 已可显示，但偏好写入未生效（LSPosed RemoteSharedPreferences 存疑）
+- **Per-app fullscreen** — 已移除。核心 hook（BoundsCompatUtils、CompatConfig、AppBounds、Letterbox）运行在 system_server 层，无法 per-app 粒度假货，只能全局 ON/OFF
 
 ### License
 
