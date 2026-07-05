@@ -1,6 +1,5 @@
 package com.example.flipunlock.hook
 
-import android.content.SharedPreferences
 import android.graphics.Insets
 import android.graphics.Path
 import android.graphics.Rect
@@ -23,29 +22,19 @@ object CutoutHook : BaseHook() {
 
     private var zeroCutout: DisplayCutout? = null
 
-    @Volatile
-    private var globalFullscreen = true
-
-    private fun initPrefs() {
-        val prefs = module?.getRemotePreferences(Prefs.NAME) ?: return
-        globalFullscreen = prefs.getBoolean(Prefs.GLOBAL_FULLSCREEN, false)
-        prefs.registerOnSharedPreferenceChangeListener { _, key ->
-            if (key == Prefs.GLOBAL_FULLSCREEN) {
-                globalFullscreen = prefs.getBoolean(Prefs.GLOBAL_FULLSCREEN, false)
-            }
-        }
+    private fun isFullscreenEnabled(): Boolean {
+        return module?.getRemotePreferences(Prefs.NAME)
+            ?.getBoolean(Prefs.GLOBAL_FULLSCREEN, false) ?: false
     }
 
     fun hookFramework(param: SystemServerStartingParam) {
         safeHook("CutoutHook-framework") {
-            initPrefs()
             hookCutoutParser(param.classLoader)
             hookDisplayGetCutout()
         }
     }
 
     override fun setupHooks(param: PackageReadyParam) {
-        initPrefs()
         hookCutoutParser(param.classLoader)
         hookDisplayGetCutout()
         hookDisplayUtilsGetCutoutPosition(param)
@@ -76,7 +65,7 @@ object CutoutHook : BaseHook() {
         runCatching {
             val getCutoutMethod = Display::class.java.method("getCutout")
             hook(getCutoutMethod, Hooker { chain ->
-                if (!globalFullscreen) return@Hooker chain.proceed()
+                if (!isFullscreenEnabled()) return@Hooker chain.proceed()
                 getZeroCutout() ?: chain.proceed()
             })
         }.onFailure { log("CutoutFix: failed hook Display.getCutout", it) }
