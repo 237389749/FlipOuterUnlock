@@ -1,7 +1,5 @@
 package com.example.flipunlock.ui
 
-import android.content.Context
-import android.content.SharedPreferences
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -18,22 +16,19 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.flipunlock.Prefs
+import com.example.flipunlock.module
 
 @Composable
 fun MainScreen() {
-    val context = LocalContext.current
-    val prefs: SharedPreferences = remember {
-        context.getSharedPreferences(Prefs.NAME, Context.MODE_PRIVATE)
-    }
+    val prefs = remember { module?.getRemotePreferences(Prefs.NAME) }
 
     var showTip by remember { mutableStateOf(true) }
     var globalFullscreen by remember {
-        mutableStateOf(prefs.getBoolean(Prefs.GLOBAL_FULLSCREEN, false))
+        mutableStateOf(prefs?.getBoolean(Prefs.GLOBAL_FULLSCREEN, false) ?: false)
     }
     var showAppList by remember { mutableStateOf(false) }
 
@@ -109,7 +104,7 @@ fun MainScreen() {
                     checked = globalFullscreen,
                     onCheckedChange = { enabled: Boolean ->
                         globalFullscreen = enabled
-                        prefs.edit().putBoolean(Prefs.GLOBAL_FULLSCREEN, enabled).apply()
+                        prefs?.edit()?.putBoolean(Prefs.GLOBAL_FULLSCREEN, enabled)?.apply()
                     }
                 )
             }

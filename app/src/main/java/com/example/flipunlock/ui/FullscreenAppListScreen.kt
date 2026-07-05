@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.flipunlock.Prefs
+import com.example.flipunlock.module
 
 data class AppInfo(
     val packageName: String,
@@ -28,9 +29,7 @@ data class AppInfo(
 @Composable
 fun FullscreenAppListScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val prefs = remember {
-        context.getSharedPreferences(Prefs.NAME, Context.MODE_PRIVATE)
-    }
+    val prefs = remember { module?.getRemotePreferences(Prefs.NAME) }
 
     val apps = remember { loadInstalledApps(context) }
 
@@ -45,7 +44,7 @@ fun FullscreenAppListScreen(onBack: () -> Unit) {
 
     val appStates = remember {
         mutableStateMapOf<String, Boolean>().apply {
-            apps.forEach { put(it.packageName, prefs.getBoolean(Prefs.fullscreenKey(it.packageName), false)) }
+            apps.forEach { put(it.packageName, prefs?.getBoolean(Prefs.fullscreenKey(it.packageName), false) ?: false) }
         }
     }
 
@@ -99,7 +98,7 @@ fun FullscreenAppListScreen(onBack: () -> Unit) {
                             checked = appStates[app.packageName] ?: false,
                             onCheckedChange = { checked: Boolean ->
                                 appStates[app.packageName] = checked
-                                prefs.edit().putBoolean(Prefs.fullscreenKey(app.packageName), checked).apply()
+                                prefs?.edit()?.putBoolean(Prefs.fullscreenKey(app.packageName), checked)?.apply()
                             }
                         )
                     }
