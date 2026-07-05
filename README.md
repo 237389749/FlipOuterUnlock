@@ -115,6 +115,7 @@ For CI, add GitHub Secrets: `KEYSTORE` (base64), `KEYSTORE_PASSWORD`, `ALIAS`, `
 - **SubScreenGestureHook** — Enable system-level multi-finger gestures on external display (no effect)
 - **ScreenTypeHook** — Spoof `Configuration.getScreenType()` → 0 (inner-screen lockscreen breaks swipe-to-unlock)
 - **LauncherDensityHook** — Lower density for inner launcher on outer screen (not working)
+- **AodHook** — Enable AOD on outer screen when folded (flashing, can't turn off)
 
 ### License
 
@@ -192,6 +193,7 @@ CI: GitHub Secrets → `KEYSTORE`(base64), `KEYSTORE_PASSWORD`, `ALIAS`, `KEY_PA
 - **SubScreenGestureHook** — 启用系统级外屏多指手势（无效果）
 - **ScreenTypeHook** — 伪装 `Configuration.getScreenType()` → 0（内屏样式锁屏无法上滑解锁）
 - **LauncherDensityHook** — 降低内屏桌面在外屏的 density 以改善布局（不生效）
+- **AodHook** — 折叠状态下外屏 AOD（闪烁、无法关闭）
 
 ### License
 
