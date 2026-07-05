@@ -3,7 +3,9 @@ package com.example.flipunlock.hook
 import android.app.Activity
 import android.os.Bundle
 import android.view.WindowManager
+import com.example.flipunlock.Prefs
 import com.example.flipunlock.hook.util.*
+import com.example.flipunlock.module
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 object ActivityLifecycleHook : BaseHook() {
@@ -17,7 +19,11 @@ object ActivityLifecycleHook : BaseHook() {
         }
     }
 
-    private fun shouldHook(pkg: String): Boolean = true
+    private fun shouldHook(pkg: String): Boolean {
+        val prefs = module?.getRemotePreferences(Prefs.NAME) ?: return true
+        if (!prefs.getBoolean(Prefs.GLOBAL_FULLSCREEN, true)) return false
+        return prefs.getBoolean(Prefs.fullscreenKey(pkg), false)
+    }
 
     private fun hookOnCreate() {
         runCatching {

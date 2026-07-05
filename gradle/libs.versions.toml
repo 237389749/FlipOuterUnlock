@@ -1,5 +1,10 @@
 [versions]
 agp = "9.1.1"
+kotlin = "2.3.21"
+compose-bom = "2026.05.00"
+activity-compose = "1.13.0"
+lifecycle-runtime-ktx = "2.10.0"
+miuix = "0.9.0"
 xposed-api = "101.0.1"
 xposed-service = "101.0.0"
 dexkit = "2.2.0"
@@ -8,7 +13,17 @@ dexkit = "2.2.0"
 libxposed-api = { group = "io.github.libxposed", name = "api", version.ref = "xposed-api" }
 libxposed-service = { group = "io.github.libxposed", name = "service", version.ref = "xposed-service" }
 dexkit = { group = "org.luckypray", name = "dexkit", version.ref = "dexkit" }
+compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
+activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activity-compose" }
+lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle-runtime-ktx" }
+androidx-foundation = { module = "androidx.compose.foundation:foundation" }
+androidx-material-icons-core = { module = "androidx.compose.material:material-icons-core" }
+androidx-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+miuix-ui = { group = "top.yukonga.miuix.kmp", name = "miuix-ui-android", version.ref = "miuix" }
+miuix-preference = { group = "top.yukonga.miuix.kmp", name = "miuix-preference-android", version.ref = "miuix" }
+miuix-icons = { group = "top.yukonga.miuix.kmp", name = "miuix-icons-android", version.ref = "miuix" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 lsplugin-apksign = { id = "org.lsposed.lsplugin.apksign", version = "1.4" }
