@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.example.flipunlock.ui
 
 import android.content.Context
@@ -25,7 +27,6 @@ data class AppInfo(
     val label: String,
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FullscreenAppListScreen(onBack: () -> Unit) {
     val context = LocalContext.current
