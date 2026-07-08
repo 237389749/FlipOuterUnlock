@@ -60,46 +60,48 @@ object WhitelistHook {
     private fun updateWhitelist(context: Context) {
         if (isUpdating) return
         isUpdating = true
-        try {
-            val pm = context.packageManager
-            val apps = pm.getInstalledApplications(0)
-            val sb = StringBuilder()
-            for (info in apps) {
-                sb.append(info.packageName).append(":")
-            }
-            if (sb.isNotEmpty()) sb.setLength(sb.length - 1) // remove trailing ':'
-            val allApps = sb.toString()
+        Thread {
+            try {
+                val pm = context.packageManager
+                val apps = pm.getInstalledApplications(0)
+                val sb = StringBuilder()
+                for (info in apps) {
+                    sb.append(info.packageName).append(":")
+                }
+                if (sb.isNotEmpty()) sb.setLength(sb.length - 1)
+                val allApps = sb.toString()
 
-            // Get window service binder and call dump
-            val smClass = Class.forName("android.os.ServiceManager")
-            val windowBinder = smClass.callMethod("getService", "window") as IBinder
-            val dumpMethod = windowBinder.javaClass.getMethod(
-                "dump", java.io.FileDescriptor::class.java, Array<String>::class.java
-            )
+                val smClass = Class.forName("android.os.ServiceManager")
+                val windowBinder = smClass.callMethod("getService", "window") as IBinder
+                val dumpMethod = windowBinder.javaClass.getMethod(
+                    "dump", java.io.FileDescriptor::class.java, Array<String>::class.java
+                )
 
-            val pipe = ParcelFileDescriptor.createPipe()
-            Thread {
+                val pipe = ParcelFileDescriptor.createPipe()
+                val input: InputStream = ParcelFileDescriptor.AutoCloseInputStream(pipe[0])
                 try {
                     dumpMethod.invoke(
                         windowBinder,
                         pipe[1].fileDescriptor,
                         arrayOf("-setForceDisplayCompatMode", allApps, "allowstart")
                     )
-                } catch (_: Exception) {}
-            }.start()
+                    pipe[1].close()
+                } catch (_: Exception) {
+                    runCatching { pipe[1].close() }
+                }
 
-            // Read output to avoid blocking the pipe
-            val input: InputStream = ParcelFileDescriptor.AutoCloseInputStream(pipe[0])
-            val buffer = ByteArray(1024)
-            while (input.read(buffer) != -1) { /* drain */ }
-            input.close()
+                val buffer = ByteArray(1024)
+                val deadline = System.currentTimeMillis() + 5000
+                while (System.currentTimeMillis() < deadline && input.read(buffer) != -1) { /* drain */ }
+                input.close()
 
-            log("WhitelistHook: whitelisted ${apps.size} apps")
-        } catch (e: Exception) {
-            log("WhitelistHook: update failed", e)
-        } finally {
-            isUpdating = false
-        }
+                log("WhitelistHook: whitelisted ${apps.size} apps")
+            } catch (e: Exception) {
+                log("WhitelistHook: update failed", e)
+            } finally {
+                isUpdating = false
+            }
+        }.start()
     }
 
     // ── BroadcastReceiver for package changes ─────────────────────────
