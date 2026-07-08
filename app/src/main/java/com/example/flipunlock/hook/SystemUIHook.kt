@@ -16,8 +16,8 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  * - MiuiCollapsedStatusBarFragment clock visibility (hide on flip outer screen)
  * - NotificationIconContainer / MiuiStatusIconContainer icon expansion
  *
- * DeviceIdentityHook already forces isTinyScreen/isFlipTinyScreen -> false globally,
- * so we apply fixes unconditionally without checking device state.
+ * DeviceIdentityHook is excluded from SystemUI process (lock screen crash),
+ * so this hook applies fixes unconditionally without device state checks.
  */
 object SystemUIHook : BaseHook() {
     override val targetPackages = listOf("com.android.systemui")

@@ -141,11 +141,4 @@ object AppBoundsHook {
         }
     }
 
-    /**
-     * Execute [block], always run [cleanup] afterwards (even on exception),
-     * then return the block's result or rethrow its exception.
-     */
-    private inline fun <T> runWithCleanup(cleanup: () -> Unit, block: () -> T): T {
-        return runCatching(block).also { cleanup() }.getOrThrow()
-    }
 }
