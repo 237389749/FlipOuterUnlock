@@ -55,14 +55,14 @@ object AppBoundsHook {
             param.classLoader.loadClass("android.app.servertransaction.LaunchActivityItem")
         hook(
             launchActivityItemClass.constructors.first { it.parameterCount > 10 },
-            after { chain, _ ->
+            after { chain, result ->
                 runCatching {
                     chain.thisObject?.getField("mOverrideConfig")
                         ?.let { fixConfigurationAppBounds(it) }
                     chain.thisObject?.getField("mCurConfig")
                         ?.let { fixConfigurationAppBounds(it) }
                 }
-                null
+                result // must return constructed instance, not null
             }
         )
     }
