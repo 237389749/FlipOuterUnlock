@@ -24,12 +24,14 @@ object CutoutHook : BaseHook() {
         safeHook("CutoutHook-framework") {
             hookCutoutParser(param.classLoader)
             hookDisplayGetCutout()
+            hookDisplayFlipFoldedCutout()
         }
     }
 
     override fun setupHooks(param: PackageReadyParam) {
         hookCutoutParser(param.classLoader)
         hookDisplayGetCutout()
+        hookDisplayFlipFoldedCutout()
         hookDisplayUtilsGetCutoutPosition(param)
     }
 
@@ -67,6 +69,17 @@ object CutoutHook : BaseHook() {
                 }
             })
         }.onFailure { log("CutoutFix: failed hook Display.getCutout", it) }
+    }
+
+    // MIUI hidden method: Display.getFlipFoldedCutout()
+    // Called reflectively by AlertController (miuix.jar) to get the
+    // folded-state cutout. Separate from getCutout() — must be hooked
+    // independently to prevent MIUI dialogs from seeing the real cutout.
+    private fun hookDisplayFlipFoldedCutout() {
+        runCatching {
+            val method = Display::class.java.method("getFlipFoldedCutout")
+            hook(method, replaceResult(null))
+        }.onFailure { /* method may not exist on non-MIUI or older versions */ }
     }
 
     private fun hookDisplayUtilsGetCutoutPosition(param: PackageReadyParam) {
