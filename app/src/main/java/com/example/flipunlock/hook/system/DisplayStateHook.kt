@@ -4,36 +4,65 @@ import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 
 /**
- * Force the device to always report OPENED (unfolded) state.
+ * Split device state: display layer sees CLOSED (outer screen on),
+ * app layer sees OPENED (all flip restrictions gone).
  *
- * Must be paired with a modified display_layout_configuration.xml:
- *   /odm/etc/displayconfig/display_layout_configuration.xml
- *   → OPENED state (id=3) should use outer screen address
- *     4630947108695800452 instead of inner 4630947108695800451
+ * From decompiled LogicalDisplayMapper (services.jar):
+ *   DeviceStateManager callback → setDeviceStateLocked(state)
+ *     → applyLayoutLocked()
+ *       → DeviceStateToLayoutMap.get(state)  ← reads display_layout_config.xml mapping
+ *         → setEnabledLocked(display, enabled)
  *
- * With both in place:
- * - All flip-specific restrictions disappear (isFlipDevice→false cascade)
- * - Outer screen stays on (XML override prevents blackout)
- * - Existing hooks (Cutout, IME, Sogou, etc.) can be phased out gradually
+ * From decompiled ContinuityPolicyService:
+ *   FoldStateListener → onDeviceStateChanged(boolean folded)
+ *     → controls app continuity/intercept restrictions
  *
- * WARNING: This is the nuclear option. Test carefully.
+ * Two independent hooks — no XML modification needed.
  */
 object DisplayStateHook {
 
     fun hook(param: SystemServerStartingParam) {
         safeHook("DisplayStateHook") {
-            hookFoldStateToUnfolded(param)
+            hookDisplayToClosed(param)
+            hookAppLayerToUnfolded(param)
         }
     }
 
-    private fun hookFoldStateToUnfolded(param: SystemServerStartingParam) {
+    // ── 1. Display layer: always CLOSED → outer screen active ───────────
+    // LogicalDisplayMapper.setDeviceStateLocked(DeviceState) reads
+    // state.getIdentifier() to decide which display layout to apply.
+    // DeviceState has a public constructor DeviceState(int).
+    // We force state=0 (CLOSED) so the outer screen remains active.
+    private fun hookDisplayToClosed(param: SystemServerStartingParam) {
+        runCatching {
+            val mapperClass = param.classLoader.loadClass(
+                "com.android.server.display.LogicalDisplayMapper"
+            )
+            val method = mapperClass.method(
+                "setDeviceStateLocked",
+                android.hardware.devicestate.DeviceState::class.java
+            )
+            // Cache the constructor
+            val closedStateConstructor = android.hardware.devicestate.DeviceState::class.java
+                .getDeclaredConstructor(Int::class.javaPrimitiveType!!)
+            val closedState = closedStateConstructor.newInstance(0)
+
+            hook(method) { chain ->
+                chain.args[0] = closedState
+                chain.proceed()
+            }
+            log("DisplayState: forced LogicalDisplayMapper -> always CLOSED (outer screen)")
+        }.onFailure { log("DisplayState: failed hook LogicalDisplayMapper", it) }
+    }
+
+    // ── 2. App layer: always unfolded → flip restrictions disabled ──────
+    // ContinuityPolicyService.onDeviceStateChanged(boolean folded)
+    // Force false = unfolded regardless of actual sensor.
+    private fun hookAppLayerToUnfolded(param: SystemServerStartingParam) {
         runCatching {
             val cpsClass = param.classLoader.loadClass(
                 "com.android.server.wm.ContinuityPolicyService"
             )
-            // onDeviceStateChanged(boolean folded) — registered as
-            // FoldStateListener callback in onBootPhase(phase=500).
-            // Force false = unfolded regardless of actual sensor value.
             val method = cpsClass.method(
                 "onDeviceStateChanged", Boolean::class.javaPrimitiveType!!
             )
@@ -41,7 +70,7 @@ object DisplayStateHook {
                 chain.args[0] = false
                 chain.proceed()
             }
-            log("DisplayState: forced onDeviceStateChanged -> unfolded")
-        }.onFailure { log("DisplayState: failed", it) }
+            log("DisplayState: forced ContinuityPolicyService.onDeviceStateChanged -> unfolded")
+        }.onFailure { log("DisplayState: failed hook ContinuityPolicyService", it) }
     }
 }
