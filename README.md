@@ -55,6 +55,7 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 
 ```
 onSystemServerStarting (system_server):
+├── DisplayStateHook          → dual-state: display=CLOSED + app=OPENED ★
 ├── CutoutHook.hookFramework  → Display.getCutout + Parser
 ├── LetterboxHook             → isLetterboxedForDisplayCutout → false
 ├── WhitelistHook             → ContinuityPolicyService dump
@@ -68,13 +69,15 @@ onPackageReady:
 ├── DeviceIdentityHook [* excl. SystemUI, Sogou]
 ├── CutoutHook [systemui, aod, camera]
 ├── SystemUIHook [systemui]   → widget, notification, clock, icons
-├── AodHook [aod]             → isAodEnable → true on outer screen
 ├── SogouInputHook [sogou]    → toolbar + clipboard (DexKit)
 ├── ActivityLifecycleHook [*] → layoutInDisplayCutoutMode=ALWAYS
 └── WatchOverlayHook [fliphome] → 4-layer widget defense
-```
 
-> **master 分支** 另有 GestureHook、SubScreenGestureHook、ScreenTypeHook、LauncherDensityHook（开发中，已注释）。
+★ Sensor-layer dual-state split (experimental):
+   LogicalDisplayMapper.setDeviceStateLocked → state=0 (outer screen on)
+   ContinuityPolicyService.onDeviceStateChanged → false (unfolded)
+   If stable, can replace DeviceIdentityHook + CompatConfigHook entirely.
+```
 
 ### Requirements
 
