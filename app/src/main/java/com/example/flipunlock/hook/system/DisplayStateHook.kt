@@ -38,13 +38,15 @@ object DisplayStateHook {
             val mapperClass = param.classLoader.loadClass(
                 "com.android.server.display.LogicalDisplayMapper"
             )
-            val method = mapperClass.method(
-                "setDeviceStateLocked",
-                android.hardware.devicestate.DeviceState::class.java
+            val deviceStateClass = param.classLoader.loadClass(
+                "android.hardware.devicestate.DeviceState"
             )
-            // Cache the constructor
-            val closedStateConstructor = android.hardware.devicestate.DeviceState::class.java
-                .getDeclaredConstructor(Int::class.javaPrimitiveType!!)
+            val method = mapperClass.method("setDeviceStateLocked", deviceStateClass)
+
+            // DeviceState has public constructor DeviceState(int identifier)
+            val closedStateConstructor = deviceStateClass.getDeclaredConstructor(
+                java.lang.Integer.TYPE
+            )
             val closedState = closedStateConstructor.newInstance(0)
 
             hook(method) { chain ->
