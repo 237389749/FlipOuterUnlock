@@ -46,14 +46,14 @@ class Main : XposedModule() {
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
         CutoutHook.hookFramework(param)
         LetterboxHook.hook(param)
-//        WhitelistHook.hook(param)  // ⬅ testing: replaced by DisplayStateHook?
+        WhitelistHook.hook(param)
 //        SubScreenGestureHook.hook(param)
         DisplayStateHook.hook(param)
 //        CompatConfigHook.hook(param)  // ⬅ testing
 //        AppBoundsHook.hook(param)  // ⬅ testing
         SystemServicesHook.hook(param)
         InputMethodHook.hook(param)
-//        InterceptHook.hook(param)  // ⬅ testing
+        InterceptHook.hook(param)
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
