@@ -67,6 +67,7 @@ onSystemServerStarting (system_server):
 
 onPackageReady:
 ├── DeviceIdentityHook [* excl. SystemUI, Sogou]
+├── CameraHook [camera]         → redirect front cam → main back (WIP)
 ├── CutoutHook [systemui, aod, camera]
 ├── SystemUIHook [systemui]   → widget, notification, clock, icons
 ├── SogouInputHook [sogou]    → toolbar + clipboard (DexKit)
@@ -124,6 +125,8 @@ For CI, add GitHub Secrets: `KEYSTORE` (base64), `KEYSTORE_PASSWORD`, `ALIAS`, `
 - **ScreenTypeHook** — Spoof `Configuration.getScreenType()` → 0 (inner-screen lockscreen breaks swipe-to-unlock)
 - **LauncherDensityHook** — Lower density for inner launcher on outer screen (not working)
 - **AodHook** — Enable AOD on outer screen when folded (flashing, can't turn off)
+- **CameraHook** — Redirect front camera to main back on outer screen (not working — attempted F3.e, FUAbstractCamera, CameraManager.openCamera)
+- **FaceUnlock** — Face unlock on outer screen (blocked — camera selection in vendor HAL daemon, not accessible from LSPosed)
 
 ### License
 
@@ -202,6 +205,8 @@ CI: GitHub Secrets → `KEYSTORE`(base64), `KEYSTORE_PASSWORD`, `ALIAS`, `KEY_PA
 - **ScreenTypeHook** — 伪装 `Configuration.getScreenType()` → 0（内屏样式锁屏无法上滑解锁）
 - **LauncherDensityHook** — 降低内屏桌面在外屏的 density 以改善布局（不生效）
 - **AodHook** — 折叠状态下外屏 AOD（闪烁、无法关闭）
+- **CameraHook** — 外屏前摄重定向到主后摄（不生效 — 已尝试 F3.e / FUAbstractCamera / CameraManager.openCamera 三层 hook）
+- **FaceUnlock** — 外屏人脸解锁（已确认不可行 — 相机选择在 vendor HAL daemon 内部，LSPosed 无法触及）
 
 ### License
 
