@@ -101,39 +101,38 @@ object DisplayStateHook {
         }.onFailure { log("DisplayState: failed hook getDisplayInfoForStateLocked", it) }
     }
 
-    // ── 4. AOD on outer screen: enable dual-display doze ─────────────────
-    // DreamManagerService checks isDualRearDevice() to decide single vs
-    // multi-display doze. Also force shouldDeviceBeSleep→false so CLOSED
-    // state (0) doesn't trigger full sleep instead of AOD.
+    // ── 4. AOD on outer screen: prevent sleep when folded ────────────────
+    // Call chain: LogicalDisplayMapper.setDeviceStateLocked()
+    //   → DisplayManagerServiceImpl.shouldDeviceBeSleep()
+    //     → MiuiFlipPolicy.shouldDeviceBeSleep()  ← final gate
+    //
+    // MiuiFlipPolicy checks mNeedShowKeyguardWindow (from Settings
+    // flip_continuity_default). If false → sleep, no AOD.
+    // We hook both layers: MiuiFlipPolicy (primary) and DisplayManagerServiceImpl (backup).
     private fun hookAodOuterScreen(param: SystemServerStartingParam) {
+        // Primary: MiuiFlipPolicy.shouldDeviceBeSleep() → false
         runCatching {
-            val stubClass = param.classLoader.loadClass(
-                "com.android.server.display.DisplayManagerServiceStub"
+            val policyClass = param.classLoader.loadClass(
+                "com.android.server.display.MiuiFlipPolicy"
             )
-            // isDualRearDevice() → true (multi-display doze)
-            runCatching {
-                hook(stubClass.method("isDualRearDevice"), replaceResult(true))
-                log("DisplayState: isDualRearDevice → true")
-            }.onFailure { log("DisplayState: isDualRearDevice failed", it) }
+            hook(policyClass.method("shouldDeviceBeSleep"), replaceResult(false))
+            log("DisplayState/AOD: MiuiFlipPolicy.shouldDeviceBeSleep → false")
+        }.onFailure { log("DisplayState/AOD: MiuiFlipPolicy failed", it) }
 
-            // isRearScreenDevice() → true (outer screen = rear screen)
-            runCatching {
-                hook(stubClass.method("isRearScreenDevice"), replaceResult(true))
-                log("DisplayState: isRearScreenDevice → true")
-            }.onFailure { log("DisplayState: isRearScreenDevice failed", it) }
-
-            // shouldDeviceBeSleep() → false (don't deep sleep when folded)
-            runCatching {
-                val sleepMethod = stubClass.method(
-                    "shouldDeviceBeSleep",
-                    android.util.SparseBooleanArray::class.java,
-                    Int::class.javaPrimitiveType!!,
-                    Int::class.javaPrimitiveType!!,
-                    Boolean::class.javaPrimitiveType!!
-                )
-                hook(sleepMethod, replaceResult(false))
-                log("DisplayState: shouldDeviceBeSleep → false")
-            }.onFailure { log("DisplayState: shouldDeviceBeSleep failed", it) }
-        }.onFailure { log("DisplayState: AOD hooks failed", it) }
+        // Backup: DisplayManagerServiceImpl.shouldDeviceBeSleep() → false
+        runCatching {
+            val implClass = param.classLoader.loadClass(
+                "com.android.server.display.DisplayManagerServiceImpl"
+            )
+            val sleepMethod = implClass.method(
+                "shouldDeviceBeSleep",
+                android.util.SparseBooleanArray::class.java,
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+                Boolean::class.javaPrimitiveType!!
+            )
+            hook(sleepMethod, replaceResult(false))
+            log("DisplayState/AOD: DisplayManagerServiceImpl.shouldDeviceBeSleep → false")
+        }.onFailure { log("DisplayState/AOD: DisplayManagerServiceImpl failed", it) }
     }
 }
