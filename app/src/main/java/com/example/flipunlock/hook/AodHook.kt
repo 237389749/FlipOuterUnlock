@@ -58,6 +58,25 @@ object AodHook : BaseHook() {
                 }
                 log("AodHook: hooked isFolded")
             }.onFailure { log("AodHook: isFolded failed", it) }
+
+            // getShowStyle(Context) — force non-temporary on outer screen
+            // Default is 0 (Temporary=5s). Force 2 (Always on) or 3 (Smart).
+            runCatching {
+                val method = utilsClass.method(
+                    "getShowStyle", android.content.Context::class.java)
+                hook(method) { chain ->
+                    val result = (chain.proceed() as? Int) ?: 0
+                    val ctx = chain.args[0] as? android.content.Context
+                    val metrics = ctx?.resources?.displayMetrics
+                    if (metrics != null && metrics.heightPixels in 1000..1500 && result == 0) {
+                        log("AodHook: getShowStyle 0 → 2 (outer screen)")
+                        2  // Always on
+                    } else {
+                        result
+                    }
+                }
+                log("AodHook: hooked getShowStyle")
+            }.onFailure { log("AodHook: getShowStyle failed", it) }
         }.onFailure { log("AodHook: failed", it) }
     }
 }
