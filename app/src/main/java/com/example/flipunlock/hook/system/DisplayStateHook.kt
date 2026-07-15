@@ -26,6 +26,7 @@ object DisplayStateHook {
             hookDisplayToClosed(param)
             hookAppLayerToUnfolded(param)
             hookDisplayInfoForStateToClosed(param)
+            hookAodOuterScreen(param)
         }
     }
 
@@ -98,5 +99,41 @@ object DisplayStateHook {
             }
             log("DisplayState: forced getDisplayInfoForStateLocked -> always state=0")
         }.onFailure { log("DisplayState: failed hook getDisplayInfoForStateLocked", it) }
+    }
+
+    // ── 4. AOD on outer screen: enable dual-display doze ─────────────────
+    // DreamManagerService checks isDualRearDevice() to decide single vs
+    // multi-display doze. Also force shouldDeviceBeSleep→false so CLOSED
+    // state (0) doesn't trigger full sleep instead of AOD.
+    private fun hookAodOuterScreen(param: SystemServerStartingParam) {
+        runCatching {
+            val stubClass = param.classLoader.loadClass(
+                "com.android.server.display.DisplayManagerServiceStub"
+            )
+            // isDualRearDevice() → true (multi-display doze)
+            runCatching {
+                hook(stubClass.method("isDualRearDevice"), replaceResult(true))
+                log("DisplayState: isDualRearDevice → true")
+            }.onFailure { log("DisplayState: isDualRearDevice failed", it) }
+
+            // isRearScreenDevice() → true (outer screen = rear screen)
+            runCatching {
+                hook(stubClass.method("isRearScreenDevice"), replaceResult(true))
+                log("DisplayState: isRearScreenDevice → true")
+            }.onFailure { log("DisplayState: isRearScreenDevice failed", it) }
+
+            // shouldDeviceBeSleep() → false (don't deep sleep when folded)
+            runCatching {
+                val sleepMethod = stubClass.method(
+                    "shouldDeviceBeSleep",
+                    android.util.SparseBooleanArray::class.java,
+                    Int::class.javaPrimitiveType!!,
+                    Int::class.javaPrimitiveType!!,
+                    Boolean::class.javaPrimitiveType!!
+                )
+                hook(sleepMethod, replaceResult(false))
+                log("DisplayState: shouldDeviceBeSleep → false")
+            }.onFailure { log("DisplayState: shouldDeviceBeSleep failed", it) }
+        }.onFailure { log("DisplayState: AOD hooks failed", it) }
     }
 }
