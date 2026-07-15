@@ -63,7 +63,7 @@ object CameraHook : BaseHook() {
         // k() = getFrontCameraId() → role 1
         runCatching {
             val method = adapterClass.method("k")
-            hook(method, after { _, result ->
+            hook(method, after { chain, result ->
                 val r = result as? Int ?: return@after result
                 if (r == -1 && mainBackCameraId != -1) {
                     log("CameraHook/B: k()=-1 → $mainBackCameraId")
@@ -76,7 +76,7 @@ object CameraHook : BaseHook() {
         // F() = hasFrontCoverCamera() → role 41
         runCatching {
             val method = adapterClass.method("F")
-            hook(method, after { _, result ->
+            hook(method, after { chain, result ->
                 val r = result as? Boolean ?: return@after result
                 if (!r) {
                     log("CameraHook/B: F()=false → true")
@@ -89,7 +89,7 @@ object CameraHook : BaseHook() {
         // n() = getAuxFrontCameraId() → role 40
         runCatching {
             val method = adapterClass.method("n")
-            hook(method, after { _, result ->
+            hook(method, after { chain, result ->
                 val r = result as? Int ?: return@after result
                 if (r == -1 && mainBackCameraId != -1) {
                     log("CameraHook/B: n()=-1 → $mainBackCameraId")
