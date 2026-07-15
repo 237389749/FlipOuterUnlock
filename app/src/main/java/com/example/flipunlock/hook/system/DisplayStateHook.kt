@@ -101,15 +101,11 @@ object DisplayStateHook {
         }.onFailure { log("DisplayState: failed hook getDisplayInfoForStateLocked", it) }
     }
 
-    // ── 4. AOD on outer screen: prevent sleep + enable rear doze ──────────
+    // ── 4. AOD on outer screen: prevent sleep when folded ──────────────
     //
-    // Outer screen AOD uses DIFFERENT settings than inner screen:
-    //   Inner: "doze_always_on" + "full_screen_aod_on"
-    //   Outer: "rear_doze_always_on" ← separate setting!
-    //
-    // Even with correct Settings, handleRearSandman() checks
-    // mRearAlwaysOnEnabled — if false, outer screen goes to deep sleep.
-    // updateRearDozeSettings() must be called with alwaysOn+isFullAod=true.
+    // a) MiuiFlipPolicy.shouldDeviceBeSleep() → false
+    // b) DisplayManagerServiceImpl.shouldDeviceBeSleep() → false
+    // c) PowerManagerService.updateRearDozeSettings() → force alwaysOn+isFullAod
     private fun hookAodOuterScreen(param: SystemServerStartingParam) {
         // a) MiuiFlipPolicy.shouldDeviceBeSleep() → false
         runCatching {
@@ -152,23 +148,5 @@ object DisplayStateHook {
             log("DisplayState/AOD: updateRearDozeSettings → alwaysOn for groupId 1")
         }.onFailure { log("DisplayState/AOD: updateRearDozeSettings failed", it) }
 
-        // d) DozeBrightnessStrategyImpl.updateAodMode() → force mIsFullAod
-        runCatching {
-            val dozeClass = param.classLoader.loadClass(
-                "com.android.server.display.brightness.strategy.DozeBrightnessStrategyImpl")
-            val method = dozeClass.method(
-                "updateAodMode", Int::class.javaPrimitiveType!!)
-            hook(method, after { chain, result ->
-                val thisObj = chain.thisObject
-                val z = thisObj.getField("mIsFullAod") as? Boolean
-                if (z != true) {
-                    thisObj.setField("mIsFullAod", true)
-                    thisObj.setField("mIsFullAodForBrightness", true)
-                    log("DisplayState/AOD: forced mIsFullAod=true")
-                }
-                result
-            })
-            log("DisplayState/AOD: hooked DozeBrightnessStrategyImpl.updateAodMode")
-        }.onFailure { log("DisplayState/AOD: DozeBrightnessStrategyImpl failed", it) }
     }
 }
