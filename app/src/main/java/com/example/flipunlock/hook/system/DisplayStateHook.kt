@@ -17,7 +17,7 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  *   FoldStateListener → onDeviceStateChanged(boolean folded)
  *     → controls app continuity/intercept restrictions
  *
- * Two independent hooks — no XML modification needed.
+ * Three independent hooks — no XML modification needed.
  */
 object DisplayStateHook {
 
@@ -25,6 +25,7 @@ object DisplayStateHook {
         safeHook("DisplayStateHook") {
             hookDisplayToClosed(param)
             hookAppLayerToUnfolded(param)
+            hookDisplayInfoForStateToClosed(param)
         }
     }
 
@@ -74,5 +75,28 @@ object DisplayStateHook {
             }
             log("DisplayState: forced ContinuityPolicyService.onDeviceStateChanged -> unfolded")
         }.onFailure { log("DisplayState: failed hook ContinuityPolicyService", it) }
+    }
+
+    // ── 3. DisplayInfo query: always return CLOSED state info ─────────────
+    // getDisplayInfoForStateLocked(int deviceState, int displayId)
+    // Queries display info for a hypothetical state. SystemUI uses this
+    // to pre-compute layouts before fold/unfold. Force state=0 so all
+    // callers see outer screen layout regardless of queried state.
+    private fun hookDisplayInfoForStateToClosed(param: SystemServerStartingParam) {
+        runCatching {
+            val mapperClass = param.classLoader.loadClass(
+                "com.android.server.display.LogicalDisplayMapper"
+            )
+            val method = mapperClass.method(
+                "getDisplayInfoForStateLocked",
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!
+            )
+            hook(method) { chain ->
+                chain.args[0] = 0  // force deviceState=0 (CLOSED)
+                chain.proceed()
+            }
+            log("DisplayState: forced getDisplayInfoForStateLocked -> always state=0")
+        }.onFailure { log("DisplayState: failed hook getDisplayInfoForStateLocked", it) }
     }
 }
