@@ -20,9 +20,6 @@ object CameraHook : BaseHook() {
     override val targetPackages = listOf("com.android.camera")
 
     @Volatile private var mainBackCameraId = -1
-    // Track which CameraCharacteristics objects belong to our remapped back camera
-    private val remappedCharacteristics = java.util.Collections.newSetFromMap(
-        java.util.IdentityHashMap<Any, java.lang.Boolean>())
 
     override fun setupHooks(param: PackageReadyParam) {
         val adapterClass = runCatching {
@@ -105,46 +102,28 @@ object CameraHook : BaseHook() {
         }.onFailure { log("CameraHook/B: n() failed", it) }
     }
 
-    // ── C: Spoof LENS_FACING for remapped camera ─────────────────────────
-    // Camera app queries LENS_FACING via CameraCharacteristics.get().
-    // The back camera reports LENS_FACING_BACK (1), but since we remapped
-    // it as front, we change it to LENS_FACING_FRONT (0).
-    // Only affects the cameraId we remapped — tracked via IdentityHashMap.
+    // ── C: Spoof LENS_FACING for all cameras in this process ────────────
+    // The remapped back camera reports LENS_FACING_BACK (1), which may
+    // prevent the camera app from using it as a front camera for selfie.
+    // Hook runs only in com.android.camera process — safe to spoof globally.
     private fun approachC_hookLensFacing() {
-        // Step 1: Track which Characteristics objects are for our remapped camera
-        runCatching {
-            val cmClass = android.hardware.camera2.CameraManager::class.java
-            val getCC = cmClass.getDeclaredMethod(
-                "getCameraCharacteristics", String::class.java)
-            hook(getCC, after { chain, result ->
-                val cameraId = chain.args[0] as? String ?: return@after result
-                if (mainBackCameraId != -1 && cameraId == mainBackCameraId.toString()) {
-                    (result as? Any)?.let { remappedCharacteristics.add(it) }
-                }
-                result
-            })
-            log("CameraHook/C: hooked CameraManager.getCameraCharacteristics()")
-        }.onFailure { log("CameraHook/C: CameraManager hook failed", it) }
-
-        // Step 2: Spoof LENS_FACING for tracked characteristics
         runCatching {
             val ccClass = android.hardware.camera2.CameraCharacteristics::class.java
             val getMethod = ccClass.getDeclaredMethod(
                 "get", android.hardware.camera2.CameraCharacteristics.Key::class.java)
             hook(getMethod, after { chain, result ->
-                if (chain.thisObject !in remappedCharacteristics) return@after result
                 val key = chain.args[0] as? android.hardware.camera2.CameraCharacteristics.Key<*>
                     ?: return@after result
                 if (key.name == "android.lens.facing") {
                     val value = result as? Int ?: return@after result
-                    if (value == 1) { // LENS_FACING_BACK
-                        log("CameraHook/C: LENS_FACING BACK→FRONT for cameraId $mainBackCameraId")
+                    if (value == 1) { // LENS_FACING_BACK → FRONT
+                        log("CameraHook/C: LENS_FACING BACK→FRONT")
                         return@after 0 // LENS_FACING_FRONT
                     }
                 }
                 result
             })
             log("CameraHook/C: hooked CameraCharacteristics.get()")
-        }.onFailure { log("CameraHook/C: CameraCharacteristics hook failed", it) }
+        }.onFailure { log("CameraHook/C: failed", it) }
     }
 }
