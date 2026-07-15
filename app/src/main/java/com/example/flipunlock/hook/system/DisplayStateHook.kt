@@ -136,13 +136,12 @@ object DisplayStateHook {
         runCatching {
             val pmsClass = param.classLoader.loadClass(
                 "com.android.server.power.PowerManagerService")
-            val method = pmsClass.getDeclaredMethod(
+            val method = pmsClass.method(
                 "updateRearDozeSettings",
                 Int::class.javaPrimitiveType!!,
                 Boolean::class.javaPrimitiveType!!,
                 Boolean::class.javaPrimitiveType!!
             )
-            method.isAccessible = true
             hook(method, before { chain ->
                 val groupId = chain.args[0] as? Int ?: return@before
                 if (groupId == 1) {
@@ -157,10 +156,9 @@ object DisplayStateHook {
         runCatching {
             val dozeClass = param.classLoader.loadClass(
                 "com.android.server.display.brightness.strategy.DozeBrightnessStrategyImpl")
-            val method = dozeClass.getDeclaredMethod(
+            val method = dozeClass.method(
                 "updateAodMode", Int::class.javaPrimitiveType!!)
-            method.isAccessible = true
-            hook(method, after { chain, _ ->
+            hook(method, after { chain, result ->
                 val thisObj = chain.thisObject
                 val z = thisObj.getField("mIsFullAod") as? Boolean
                 if (z != true) {
@@ -168,6 +166,7 @@ object DisplayStateHook {
                     thisObj.setField("mIsFullAodForBrightness", true)
                     log("DisplayState/AOD: forced mIsFullAod=true")
                 }
+                result
             })
             log("DisplayState/AOD: hooked DozeBrightnessStrategyImpl.updateAodMode")
         }.onFailure { log("DisplayState/AOD: DozeBrightnessStrategyImpl failed", it) }
