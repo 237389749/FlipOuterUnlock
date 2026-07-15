@@ -3,6 +3,7 @@ package com.example.flipunlock
 import com.example.flipunlock.hook.ActivityLifecycleHook
 //import com.example.flipunlock.hook.LauncherDensityHook  // TODO: density tweak not working
 import com.example.flipunlock.hook.SogouInputHook
+import com.example.flipunlock.hook.AodHook
 import com.example.flipunlock.hook.CameraHook
 import com.example.flipunlock.hook.CutoutHook
 import com.example.flipunlock.hook.DeviceIdentityHook
@@ -31,6 +32,7 @@ class Main : XposedModule() {
     private val hooks = listOf(
 //        ScreenTypeHook,  // ⚠️ 内屏样式锁屏无法上滑
         DeviceIdentityHook,  // ← IS_FLIP 已注释排查中
+        AodHook,
         CameraHook,
         CutoutHook,
         SystemUIHook,

@@ -5,12 +5,20 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
  * Enable Always-On Display on the outer screen when folded.
- * EXPERIMENTAL — see known issues in README.
  *
  * com.miui.aod.Utils.isAodEnable() normally goes through
- * FlipLinkageStyleController.isUsingFlip() when folded,
- * which returns false unless the linkage style (flip case)
- * is enabled. We bypass this gate ONLY for the outer screen.
+ * FlipLinkageStyleController.isUsingFlip() when folded, which returns
+ * false unless the linkage style (flip case) is enabled.
+ *
+ * We hook two methods:
+ *   isAodEnable(Context) → force true on outer screen
+ *   isFolded(Context)    → force true on outer screen
+ *
+ * DeviceIdentityHook makes isFlipDevice→false, which makes isFolded→false.
+ * We override isFolded back to true for the outer screen so AOD stays on.
+ *
+ * Works together with DisplayStateHook §4 which prevents the framework
+ * from putting the device to sleep when folded.
  */
 object AodHook : BaseHook() {
     override val targetPackages = listOf("com.miui.aod")
@@ -19,22 +27,37 @@ object AodHook : BaseHook() {
         runCatching {
             val utilsClass = param.classLoader.loadClass("com.miui.aod.Utils")
 
-            val enableMethod = utilsClass.method("isAodEnable", android.content.Context::class.java)
-            hook(enableMethod) { chain ->
-                val original = chain.proceed() as? Boolean ?: false
-                val ctx = chain.args[0] as? android.content.Context
-                val metrics = ctx?.resources?.displayMetrics
-                // Only force true on outer screen if AOD is enabled in Settings.
-                // isFlipDevice is already false (DeviceIdentityHook), so the
-                // FlipLinkageStyleController gate is bypassed — original
-                // reflects isAodSettingsEnabled().
-                if (!original && metrics != null && metrics.heightPixels in 1000..1500) {
-                    true
-                } else {
-                    original
+            // isAodEnable(Context) — force true on outer screen
+            runCatching {
+                val method = utilsClass.method(
+                    "isAodEnable", android.content.Context::class.java)
+                hook(method) { chain ->
+                    val ctx = chain.args[0] as? android.content.Context
+                    val metrics = ctx?.resources?.displayMetrics
+                    if (metrics != null && metrics.heightPixels in 1000..1500) {
+                        true  // outer screen (1208x1392): force AOD enabled
+                    } else {
+                        chain.proceed()  // inner screen: original logic
+                    }
                 }
-            }
-            log("AodHook: isAodEnable hooked — respects user setting on outer screen")
+                log("AodHook: hooked isAodEnable")
+            }.onFailure { log("AodHook: isAodEnable failed", it) }
+
+            // isFolded(Context) — force true on outer screen
+            runCatching {
+                val method = utilsClass.method(
+                    "isFolded", android.content.Context::class.java)
+                hook(method) { chain ->
+                    val ctx = chain.args[0] as? android.content.Context
+                    val metrics = ctx?.resources?.displayMetrics
+                    if (metrics != null && metrics.heightPixels in 1000..1500) {
+                        true  // outer screen: force folded
+                    } else {
+                        chain.proceed()  // inner screen: original logic
+                    }
+                }
+                log("AodHook: hooked isFolded")
+            }.onFailure { log("AodHook: isFolded failed", it) }
         }.onFailure { log("AodHook: failed", it) }
     }
 }
