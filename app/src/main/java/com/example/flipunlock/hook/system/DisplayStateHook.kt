@@ -101,38 +101,75 @@ object DisplayStateHook {
         }.onFailure { log("DisplayState: failed hook getDisplayInfoForStateLocked", it) }
     }
 
-    // ── 4. AOD on outer screen: prevent sleep when folded ────────────────
-    // Call chain: LogicalDisplayMapper.setDeviceStateLocked()
-    //   → DisplayManagerServiceImpl.shouldDeviceBeSleep()
-    //     → MiuiFlipPolicy.shouldDeviceBeSleep()  ← final gate
+    // ── 4. AOD on outer screen: prevent sleep + enable rear doze ──────────
     //
-    // MiuiFlipPolicy checks mNeedShowKeyguardWindow (from Settings
-    // flip_continuity_default). If false → sleep, no AOD.
-    // We hook both layers: MiuiFlipPolicy (primary) and DisplayManagerServiceImpl (backup).
+    // Outer screen AOD uses DIFFERENT settings than inner screen:
+    //   Inner: "doze_always_on" + "full_screen_aod_on"
+    //   Outer: "rear_doze_always_on" ← separate setting!
+    //
+    // Even with correct Settings, handleRearSandman() checks
+    // mRearAlwaysOnEnabled — if false, outer screen goes to deep sleep.
+    // updateRearDozeSettings() must be called with alwaysOn+isFullAod=true.
     private fun hookAodOuterScreen(param: SystemServerStartingParam) {
-        // Primary: MiuiFlipPolicy.shouldDeviceBeSleep() → false
+        // a) MiuiFlipPolicy.shouldDeviceBeSleep() → false
         runCatching {
-            val policyClass = param.classLoader.loadClass(
-                "com.android.server.display.MiuiFlipPolicy"
-            )
-            hook(policyClass.method("shouldDeviceBeSleep"), replaceResult(false))
+            val cls = param.classLoader.loadClass(
+                "com.android.server.display.MiuiFlipPolicy")
+            hook(cls.method("shouldDeviceBeSleep"), replaceResult(false))
             log("DisplayState/AOD: MiuiFlipPolicy.shouldDeviceBeSleep → false")
         }.onFailure { log("DisplayState/AOD: MiuiFlipPolicy failed", it) }
 
-        // Backup: DisplayManagerServiceImpl.shouldDeviceBeSleep() → false
+        // b) DisplayManagerServiceImpl.shouldDeviceBeSleep() → false
         runCatching {
-            val implClass = param.classLoader.loadClass(
-                "com.android.server.display.DisplayManagerServiceImpl"
-            )
-            val sleepMethod = implClass.method(
-                "shouldDeviceBeSleep",
+            val cls = param.classLoader.loadClass(
+                "com.android.server.display.DisplayManagerServiceImpl")
+            hook(cls.method("shouldDeviceBeSleep",
                 android.util.SparseBooleanArray::class.java,
                 Int::class.javaPrimitiveType!!,
                 Int::class.javaPrimitiveType!!,
                 Boolean::class.javaPrimitiveType!!
-            )
-            hook(sleepMethod, replaceResult(false))
+            ), replaceResult(false))
             log("DisplayState/AOD: DisplayManagerServiceImpl.shouldDeviceBeSleep → false")
         }.onFailure { log("DisplayState/AOD: DisplayManagerServiceImpl failed", it) }
+
+        // c) PowerManagerService.updateRearDozeSettings() → force alwaysOn
+        runCatching {
+            val pmsClass = param.classLoader.loadClass(
+                "com.android.server.power.PowerManagerService")
+            val method = pmsClass.getDeclaredMethod(
+                "updateRearDozeSettings",
+                Int::class.javaPrimitiveType!!,
+                Boolean::class.javaPrimitiveType!!,
+                Boolean::class.javaPrimitiveType!!
+            )
+            method.isAccessible = true
+            hook(method, before { chain ->
+                val groupId = chain.args[0] as? Int ?: return@before
+                if (groupId == 1) {
+                    chain.args[1] = true  // alwaysOn
+                    chain.args[2] = true  // isFullAod
+                }
+            })
+            log("DisplayState/AOD: updateRearDozeSettings → alwaysOn for groupId 1")
+        }.onFailure { log("DisplayState/AOD: updateRearDozeSettings failed", it) }
+
+        // d) DozeBrightnessStrategyImpl.updateAodMode() → force mIsFullAod
+        runCatching {
+            val dozeClass = param.classLoader.loadClass(
+                "com.android.server.display.brightness.strategy.DozeBrightnessStrategyImpl")
+            val method = dozeClass.getDeclaredMethod(
+                "updateAodMode", Int::class.javaPrimitiveType!!)
+            method.isAccessible = true
+            hook(method, after { chain, _ ->
+                val thisObj = chain.thisObject
+                val z = thisObj.getField("mIsFullAod") as? Boolean
+                if (z != true) {
+                    thisObj.setField("mIsFullAod", true)
+                    thisObj.setField("mIsFullAodForBrightness", true)
+                    log("DisplayState/AOD: forced mIsFullAod=true")
+                }
+            })
+            log("DisplayState/AOD: hooked DozeBrightnessStrategyImpl.updateAodMode")
+        }.onFailure { log("DisplayState/AOD: DozeBrightnessStrategyImpl failed", it) }
     }
 }
