@@ -1,54 +1,102 @@
 package com.example.flipunlock.hook
 
-import android.util.SparseIntArray
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
  * Remap front camera role to a back camera on outer screen.
  *
- * Camera2CompatAdapterRole (F3.e) builds f2678h (SparseIntArray role→cameraId)
- * during init (method s()). After init, we inject:
- *   role 1  (FRONT)       → main back cameraId
- *   role 41 (FRONT_COVER) → main back cameraId
+ * Camera2CompatAdapterRole (F3.e) builds f2678h (role→cameraId mapping) during init().
+ * Two independent approaches:
  *
- * The same physical cameraId can serve multiple roles — HAL supports this.
+ * A) Hook s(boolean) after → modify f2678h directly (role 1/41 → main back)
+ * B) Hook individual query methods k(), F(), n() — intercept on every call
+ *
+ * Approach B catches cases where Approach A's timing misses (async re-init, etc.)
  */
 object CameraHook : BaseHook() {
     override val targetPackages = listOf("com.android.camera")
 
+    // Saved from init hook — main back camera's hardware ID string
+    @Volatile private var mainBackCameraId = -1
+
     override fun setupHooks(param: PackageReadyParam) {
-        remapFrontCameraAfterInit(param)
+        val adapterClass = runCatching {
+            param.classLoader.loadClass("F3.e")
+        }.onFailure {
+            log("CameraHook: F3.e not found", it)
+            return
+        }.getOrThrow()
+
+        approachA_hookInit(adapterClass)
+        approachB_hookQueries(adapterClass)
     }
 
-    private fun remapFrontCameraAfterInit(param: PackageReadyParam) {
+    // ── A: Modify f2678h after init() completes ──────────────────────────
+    private fun approachA_hookInit(adapterClass: Class<*>) {
         runCatching {
-            val adapterClass = param.classLoader.loadClass("F3.e")
-            // s(boolean) = init()
             val initMethod = adapterClass.method("s", Boolean::class.javaPrimitiveType!!)
             hook(initMethod, after { chain, result ->
-                val instance = chain.thisObject
+                val mapping = chain.thisObject.getField("f2678h") as? android.util.SparseIntArray
+                if (mapping == null || mapping.size() == 0) return@after result
 
-                // f2678h : SparseIntArray (role → cameraId)
-                val mapping = instance.getField("f2678h") as? SparseIntArray ?: return@after result
-                if (mapping.size() == 0) return@after result
-
-                val mainBackId = mapping.get(0, -1)
-                if (mainBackId == -1) {
-                    log("CameraHook: no main back camera (role 0), skipping remap")
+                val backId = mapping.get(0, -1)
+                if (backId == -1) {
+                    log("CameraHook/A: no main back camera (role 0)")
                     return@after result
                 }
 
-                val oldFrontId = mapping.get(1, -1)
-                mapping.put(1, mainBackId)
-                mapping.put(41, mainBackId)
+                mainBackCameraId = backId
+                val oldFront = mapping.get(1, -1)
+                mapping.put(1, backId)
+                mapping.put(41, backId)
 
-                log("CameraHook: remapped front camera role 1 → cameraId $mainBackId (was $oldFrontId)")
-                log("CameraHook: remapped front_cover role 41 → cameraId $mainBackId")
-
+                log("CameraHook/A: role 1→$backId (was $oldFront), role 41→$backId")
                 result
             })
-            log("CameraHook: hooked Camera2CompatAdapterRole.s(boolean)")
-        }.onFailure { log("CameraHook: failed to hook camera init", it) }
+            log("CameraHook/A: hooked F3.e.s(boolean)")
+        }.onFailure { log("CameraHook/A: failed", it) }
+    }
+
+    // ── B: Hook individual query methods — catch every call ──────────────
+    private fun approachB_hookQueries(adapterClass: Class<*>) {
+        // k() = getFrontCameraId() → role 1
+        runCatching {
+            val method = adapterClass.method("k")
+            hook(method, after { _, result ->
+                val r = result as? Int ?: return@after result
+                if (r == -1 && mainBackCameraId != -1) {
+                    log("CameraHook/B: k()=-1 → $mainBackCameraId")
+                    mainBackCameraId
+                } else result
+            })
+            log("CameraHook/B: hooked F3.e.k()")
+        }.onFailure { log("CameraHook/B: k() failed", it) }
+
+        // F() = hasFrontCoverCamera() → role 41
+        runCatching {
+            val method = adapterClass.method("F")
+            hook(method, after { _, result ->
+                val r = result as? Boolean ?: return@after result
+                if (!r) {
+                    log("CameraHook/B: F()=false → true")
+                    true
+                } else result
+            })
+            log("CameraHook/B: hooked F3.e.F()")
+        }.onFailure { log("CameraHook/B: F() failed", it) }
+
+        // n() = getAuxFrontCameraId() → role 40
+        runCatching {
+            val method = adapterClass.method("n")
+            hook(method, after { _, result ->
+                val r = result as? Int ?: return@after result
+                if (r == -1 && mainBackCameraId != -1) {
+                    log("CameraHook/B: n()=-1 → $mainBackCameraId")
+                    mainBackCameraId
+                } else result
+            })
+            log("CameraHook/B: hooked F3.e.n()")
+        }.onFailure { log("CameraHook/B: n() failed", it) }
     }
 }
