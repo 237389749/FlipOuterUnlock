@@ -101,11 +101,12 @@ object DisplayStateHook {
         }.onFailure { log("DisplayState: failed hook getDisplayInfoForStateLocked", it) }
     }
 
-    // ── 4. AOD on outer screen: prevent sleep when folded ──────────────
+    // ── 4. AOD on outer screen: prevent sleep + block dream timeouts ───
     //
     // a) MiuiFlipPolicy.shouldDeviceBeSleep() → false
     // b) DisplayManagerServiceImpl.shouldDeviceBeSleep() → false
     // c) PowerManagerService.updateRearDozeSettings() → force alwaysOn+isFullAod
+    // e) DreamController.stopDream → block "slow to connect/finish" for groupId 1
     private fun hookAodOuterScreen(param: SystemServerStartingParam) {
         // a) MiuiFlipPolicy.shouldDeviceBeSleep() → false
         runCatching {
@@ -147,6 +148,28 @@ object DisplayStateHook {
             })
             log("DisplayState/AOD: updateRearDozeSettings → alwaysOn for groupId 1")
         }.onFailure { log("DisplayState/AOD: updateRearDozeSettings failed", it) }
+
+        // e) DreamController.stopDream → block timeout kills for groupId 1
+        runCatching {
+            val dcClass = param.classLoader.loadClass(
+                "com.android.server.dreams.DreamController")
+            val method = dcClass.getDeclaredMethod("stopDream",
+                Boolean::class.javaPrimitiveType!!,
+                String::class.java)
+            method.isAccessible = true
+            hook(method) { chain ->
+                val reason = chain.args[1] as? String ?: return@hook chain.proceed()
+                if (reason == "slow to connect" || reason == "slow to finish") {
+                    val groupId = chain.thisObject.getField("mGroupId") as? Int
+                    if (groupId == 1) {
+                        log("DisplayState/AOD: blocked stopDream '$reason' for groupId 1")
+                        return@hook null
+                    }
+                }
+                chain.proceed()
+            }
+            log("DisplayState/AOD: hooked DreamController.stopDream")
+        }.onFailure { log("DisplayState/AOD: DreamController.stopDream failed", it) }
 
     }
 }
