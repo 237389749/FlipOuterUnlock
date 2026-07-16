@@ -6,11 +6,13 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 object SystemServicesHook {
 
     fun hook(param: SystemServerStartingParam) {
+        log("SystemServicesHook: setting up")
         safeHook("SystemServicesHook") {
             hookBoundsCompatUtilsByApp(param)
             hookBoundsCompatUtilsByActivity(param)
             hookWindowManagerGetFullScreenValue(param)
         }
+        log("SystemServicesHook: done")
     }
 
     private fun hookBoundsCompatUtilsByApp(param: SystemServerStartingParam) {

@@ -27,6 +27,7 @@ object ScreenTypeHook : BaseHook() {
     override val targetPackages = listOf("*")
 
     override fun hook(param: PackageReadyParam) {
+        log("ScreenTypeHook: loading for ${param.packageName}")
         safeHook("ScreenTypeHook") {
             runCatching {
                 // Hook the MIUI-injected getScreenType() on Configuration

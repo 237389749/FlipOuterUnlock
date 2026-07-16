@@ -7,11 +7,13 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 object InputMethodHook {
 
     fun hook(param: SystemServerStartingParam) {
+        log("InputMethodHook: setting up")
         safeHook("InputMethodHook") {
             hookShouldShowCurrentInput(param)
             hookMakeRotateToast(param)
             hookIsFlipTinyScreen(param)
         }
+        log("InputMethodHook: done")
     }
 
     private fun hookShouldShowCurrentInput(param: SystemServerStartingParam) {

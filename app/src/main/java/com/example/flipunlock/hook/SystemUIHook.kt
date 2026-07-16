@@ -27,6 +27,7 @@ object SystemUIHook : BaseHook() {
     private const val STATUS_BAR_ICON_MAX = 8
 
     override fun setupHooks(param: PackageReadyParam) {
+        log("SystemUIHook: loading for ${param.packageName}")
         hookDecorWindowManager(param)
         hookNotificationMenu(param)
         hookStatusBarClock(param)

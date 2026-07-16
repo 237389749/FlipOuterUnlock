@@ -21,6 +21,7 @@ object CutoutHook : BaseHook() {
     private var zeroCutout: DisplayCutout? = null
 
     fun hookFramework(param: SystemServerStartingParam) {
+        log("CutoutHook-framework: setting up in system_server")
         safeHook("CutoutHook-framework") {
             hookCutoutParser(param.classLoader)
             hookDisplayGetCutout()
@@ -29,6 +30,7 @@ object CutoutHook : BaseHook() {
     }
 
     override fun setupHooks(param: PackageReadyParam) {
+        log("CutoutHook: loading for ${param.packageName}")
         hookCutoutParser(param.classLoader)
         hookDisplayGetCutout()
         hookDisplayFlipFoldedCutout()

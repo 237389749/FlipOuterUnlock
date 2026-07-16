@@ -31,6 +31,7 @@ object WhitelistHook {
     private var isUpdating = false
 
     fun hook(param: SystemServerStartingParam) {
+        log("WhitelistHook: setting up")
         safeHook("WhitelistHook") {
             runCatching {
                 // Get system context via ActivityThread.systemMain()

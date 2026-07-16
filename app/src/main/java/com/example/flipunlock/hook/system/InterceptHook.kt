@@ -8,10 +8,12 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 object InterceptHook {
 
     fun hook(param: SystemServerStartingParam) {
+        log("InterceptHook: setting up")
         safeHook("InterceptHook") {
             hookIsInterceptListUnCheckFold(param)
             hookIsInterceptListForProperty(param)
         }
+        log("InterceptHook: done")
     }
 
     private fun hookIsInterceptListUnCheckFold(param: SystemServerStartingParam) {

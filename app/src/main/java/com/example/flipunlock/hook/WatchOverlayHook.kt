@@ -14,6 +14,7 @@ object WatchOverlayHook : BaseHook() {
     override val targetPackages = listOf("com.miui.fliphome")
 
     override fun setupHooks(param: PackageReadyParam) {
+        log("WatchOverlayHook: loading for ${param.packageName}")
         hookCheckAppConfigRunnable(param)
         hookWatchOverlayGroupView(param)
         hookWatchOverlayWindow(param)

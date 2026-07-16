@@ -22,6 +22,7 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 object DisplayStateHook {
 
     fun hook(param: SystemServerStartingParam) {
+        log("DisplayStateHook: setting up")
         safeHook("DisplayStateHook") {
             hookDisplayToClosed(param)
             hookAppLayerToUnfolded(param)

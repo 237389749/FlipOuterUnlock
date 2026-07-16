@@ -25,6 +25,7 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 object LetterboxHook {
 
     fun hook(param: SystemServerStartingParam) {
+        log("LetterboxHook: setting up")
         safeHook("LetterboxHook") {
             runCatching {
                 val windowStateClass = param.classLoader.loadClass(

@@ -8,8 +8,10 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 object CompatConfigHook {
 
     fun hook(param: SystemServerStartingParam) {
+        log("CompatConfigHook: setting up")
         safeHook("CompatConfig") { hookCompatConfig(param) }
         safeHook("FlipContinuity") { hookFlipContinuity(param) }
+        log("CompatConfigHook: done")
     }
 
     private fun hookCompatConfig(param: SystemServerStartingParam) {

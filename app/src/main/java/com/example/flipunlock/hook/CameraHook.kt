@@ -22,6 +22,7 @@ object CameraHook : BaseHook() {
     override val targetPackages = listOf("com.android.camera")
 
     override fun setupHooks(param: PackageReadyParam) {
+        log("CameraHook: loading for ${param.packageName}")
         runCatching {
             val cmClass = CameraManager::class.java
             val openMethod = cmClass.getDeclaredMethod(

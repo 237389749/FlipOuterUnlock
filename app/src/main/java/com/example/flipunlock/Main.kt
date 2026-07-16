@@ -1,6 +1,7 @@
 package com.example.flipunlock
 
 import com.example.flipunlock.hook.ActivityLifecycleHook
+import com.example.flipunlock.hook.util.log
 //import com.example.flipunlock.hook.LauncherDensityHook  // TODO: density tweak not working
 import com.example.flipunlock.hook.SogouInputHook
 import com.example.flipunlock.hook.AodHook
@@ -48,6 +49,7 @@ class Main : XposedModule() {
     }
 
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
+        log("Main: onSystemServerStarting — loading system hooks")
         CutoutHook.hookFramework(param)
         LetterboxHook.hook(param)
         WhitelistHook.hook(param)
@@ -62,6 +64,7 @@ class Main : XposedModule() {
 
     override fun onPackageReady(param: PackageReadyParam) {
         if (!param.isFirstPackage) return
+        log("Main: onPackageReady firstPackage=${param.packageName} — loading app hooks")
         hooks.forEach { hook ->
             if (hook.targetPackages.contains(param.packageName) || hook.targetPackages.contains("*")) {
                 hook.hook(param)

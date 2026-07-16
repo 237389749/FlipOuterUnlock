@@ -7,12 +7,14 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 object AppBoundsHook {
 
     fun hook(param: SystemServerStartingParam) {
+        log("AppBoundsHook: setting up")
         safeHook("AppBounds") {
             hookFillInsetsState(param)
             hookLaunchActivityItem(param)
             hookScheduleConfigurationChanged(param)
             hookScheduleClientTransactionItem(param)
         }
+        log("AppBoundsHook: done")
     }
 
     /**

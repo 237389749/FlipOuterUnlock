@@ -28,6 +28,7 @@ object DeviceIdentityHook : BaseHook() {
         // - SystemUI: TinyKeyguardPanelViewController (lock screen panel)
         // - Sogou IME: isTinyScreen controls keyboard height on outer screen
         if (param.packageName in setOf("com.android.systemui", "com.sohu.inputmethod.sogou.xiaomi")) return
+        log("DeviceIdentityHook: loading for ${param.packageName}")
         safeHook("DeviceIdentityHook") {
             hookRootDeviceType(param)       // MiuiMultiDisplayTypeInfo
             hookMiuiBuild(param)            // miui.os.Build
