@@ -67,6 +67,8 @@ onSystemServerStarting (system_server):
 
 onPackageReady:
 ├── DeviceIdentityHook [* excl. SystemUI, Sogou]
+├── ScreenTypeHook [*]          → getScreenType → 0 (EXPAND)
+├── AodHook [aod]               → flip identity + show style + screen state (WIP)
 ├── CameraHook [camera]         → redirect front cam → main back (WIP)
 ├── CutoutHook [systemui, aod, camera]
 ├── SystemUIHook [systemui]   → widget, notification, clock, icons
@@ -122,11 +124,10 @@ For CI, add GitHub Secrets: `KEYSTORE` (base64), `KEYSTORE_PASSWORD`, `ALIAS`, `
 
 - **GestureHook** — Keep fliphome gesture engine alive while disabling FlipLauncher (gestures not working)
 - **SubScreenGestureHook** — Enable system-level multi-finger gestures on external display (no effect)
-- **ScreenTypeHook** — Spoof `Configuration.getScreenType()` → 0 (inner-screen lockscreen breaks swipe-to-unlock)
 - **LauncherDensityHook** — Lower density for inner launcher on outer screen (not working)
-- **AodHook** — Enable AOD on outer screen when folded (flashing, can't turn off)
 - **CameraHook** — Redirect front camera to main back on outer screen (not working — attempted F3.e, FUAbstractCamera, CameraManager.openCamera)
 - **FaceUnlock** — Face unlock on outer screen (blocked — camera selection in vendor HAL daemon, not accessible from LSPosed)
+- **AodHook** — Enable AOD on outer screen when folded (DozeMachine skips DOZE_AOD; hooks may not load due to package isolation; see refMD §26)
 
 ### License
 
@@ -202,11 +203,10 @@ CI: GitHub Secrets → `KEYSTORE`(base64), `KEYSTORE_PASSWORD`, `ALIAS`, `KEY_PA
 
 - **GestureHook** — 禁用 FlipLauncher 同时保活 fliphome 手势引擎（手势不生效）
 - **SubScreenGestureHook** — 启用系统级外屏多指手势（无效果）
-- **ScreenTypeHook** — 伪装 `Configuration.getScreenType()` → 0（内屏样式锁屏无法上滑解锁）
 - **LauncherDensityHook** — 降低内屏桌面在外屏的 density 以改善布局（不生效）
-- **AodHook** — 折叠状态下外屏 AOD（闪烁、无法关闭）
 - **CameraHook** — 外屏前摄重定向到主后摄（不生效 — 已尝试 F3.e / FUAbstractCamera / CameraManager.openCamera 三层 hook）
 - **FaceUnlock** — 外屏人脸解锁（已确认不可行 — 相机选择在 vendor HAL daemon 内部，LSPosed 无法触及）
+- **AodHook** — 折叠状态下外屏 AOD（DozeMachine 跳过 DOZE_AOD 状态；hook 可能因包隔离未加载；详见 refMD §26）
 
 ### License
 
