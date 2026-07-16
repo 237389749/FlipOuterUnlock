@@ -180,7 +180,7 @@ object AodHook : BaseHook() {
         log("AodHook: setupHooks done for $pkg")
     }
 
-    /** Debug: dump classloader chain for diagnosis */
+    /** Debug: dump classloader chain + DexPathList entries */
     private fun classLoaderChain(loader: ClassLoader?): String {
         val sb = StringBuilder()
         var cl = loader
@@ -188,6 +188,30 @@ object AodHook : BaseHook() {
         while (cl != null && depth < 10) {
             if (sb.isNotEmpty()) sb.append(" → ")
             sb.append("[$depth] ${cl.javaClass.simpleName}")
+            // Dump DexPathList for BaseDexClassLoader subclasses
+            try {
+                val pathListField = cl.javaClass.superclass?.getDeclaredField("pathList")
+                if (pathListField != null) {
+                    pathListField.isAccessible = true
+                    val pathList = pathListField.get(cl)
+                    val dexElementsField = pathList?.javaClass?.getDeclaredField("dexElements")
+                    dexElementsField?.isAccessible = true
+                    val elements = dexElementsField?.get(pathList) as? Array<*>
+                    if (elements != null) {
+                        sb.append("(dex=${elements.size}")
+                        for (e in elements.take(3)) {
+                            try {
+                                val f = e?.javaClass?.getDeclaredField("path")
+                                f?.isAccessible = true
+                                val path = f?.get(e)?.toString()?.substringAfterLast("/")
+                                if (path != null) sb.append(" $path")
+                            } catch (_: Exception) {}
+                        }
+                        if (elements.size > 3) sb.append("...")
+                        sb.append(")")
+                    }
+                }
+            } catch (_: Exception) {}
             cl = cl.parent
             depth++
         }
