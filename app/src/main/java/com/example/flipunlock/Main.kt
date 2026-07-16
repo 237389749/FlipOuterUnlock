@@ -63,12 +63,19 @@ class Main : XposedModule() {
     }
 
     override fun onPackageReady(param: PackageReadyParam) {
-        if (!param.isFirstPackage) return
-        log("Main: onPackageReady firstPackage=${param.packageName} — loading app hooks")
+        log("Main: onPackageReady pkg=${param.packageName} first=${param.isFirstPackage}")
         hooks.forEach { hook ->
-            if (hook.targetPackages.contains(param.packageName) || hook.targetPackages.contains("*")) {
-                hook.hook(param)
-            }
+            val isWildcard = hook.targetPackages.contains("*")
+            val isTargeted = hook.targetPackages.contains(param.packageName)
+
+            if (!isWildcard && !isTargeted) return@forEach
+
+            // "*" hooks use the first package's classloader (framework classes).
+            // Skip them for subsequent packages to avoid duplicate hooking.
+            if (isWildcard && !param.isFirstPackage) return@forEach
+
+            log("Main: loading ${hook.javaClass.simpleName} for ${param.packageName}")
+            hook.hook(param)
         }
     }
 }
