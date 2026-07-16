@@ -6,19 +6,14 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 /**
  * Enable Always-On Display on the outer screen when folded.
  *
- * com.miui.aod.Utils.isAodEnable() normally goes through
- * FlipLinkageStyleController.isUsingFlip() when folded, which returns
- * false unless the linkage style (flip case) is enabled.
+ * DeviceIdentityHook makes isFlipDevice→false globally. This breaks AOD:
+ *   1. dealWithFlipChange() skipped → no flip init
+ *   2. DozeService.create() skips fold listener registration
+ *   3. isAodEnable() blocked by FlipLinkageStyleController gate
+ *   4. getShowStyle() defaults to 0 (Temporary, 5s timeout)
+ *   5. isFullAod() removes clock container → black screen
  *
- * We hook two methods:
- *   isAodEnable(Context) → force true on outer screen
- *   isFolded(Context)    → force true on outer screen
- *
- * DeviceIdentityHook makes isFlipDevice→false, which makes isFolded→false.
- * We override isFolded back to true for the outer screen so AOD stays on.
- *
- * Works together with DisplayStateHook §4 which prevents the framework
- * from putting the device to sleep when folded.
+ * Fixes: restore isFlipDevice, then override individual methods.
  */
 object AodHook : BaseHook() {
     override val targetPackages = listOf("com.miui.aod")
@@ -27,7 +22,16 @@ object AodHook : BaseHook() {
         runCatching {
             val utilsClass = param.classLoader.loadClass("com.miui.aod.Utils")
 
-            // isAodEnable(Context) — force true on outer screen
+            // 1. isFlipDevice() → true (reverses DeviceIdentityHook)
+            //    Fixes: dealWithFlipChange init + DozeService fold listener
+            runCatching {
+                val method = utilsClass.method("isFlipDevice")
+                hook(method, replaceResult(true))
+                log("AodHook: isFlipDevice → true")
+            }.onFailure { log("AodHook: isFlipDevice failed", it) }
+
+            // 2. isAodEnable(Context) → force true on outer screen
+            //    FlipLinkageStyleController.isUsingFlip may return false
             runCatching {
                 val method = utilsClass.method(
                     "isAodEnable", android.content.Context::class.java)
@@ -35,7 +39,7 @@ object AodHook : BaseHook() {
                     val ctx = chain.args[0] as? android.content.Context
                     val metrics = ctx?.resources?.displayMetrics
                     if (metrics != null && metrics.heightPixels in 1000..1500) {
-                        true  // outer screen (1208x1392): force AOD enabled
+                        true  // outer screen (1208x1392)
                     } else {
                         chain.proceed()  // inner screen: original logic
                     }
@@ -43,7 +47,7 @@ object AodHook : BaseHook() {
                 log("AodHook: hooked isAodEnable")
             }.onFailure { log("AodHook: isAodEnable failed", it) }
 
-            // isFolded(Context) — force true on outer screen
+            // 3. isFolded(Context) → force true on outer screen
             runCatching {
                 val method = utilsClass.method(
                     "isFolded", android.content.Context::class.java)
@@ -51,16 +55,15 @@ object AodHook : BaseHook() {
                     val ctx = chain.args[0] as? android.content.Context
                     val metrics = ctx?.resources?.displayMetrics
                     if (metrics != null && metrics.heightPixels in 1000..1500) {
-                        true  // outer screen: force folded
+                        true
                     } else {
-                        chain.proceed()  // inner screen: original logic
+                        chain.proceed()
                     }
                 }
                 log("AodHook: hooked isFolded")
             }.onFailure { log("AodHook: isFolded failed", it) }
 
-            // getShowStyle(Context) — force non-temporary on outer screen
-            // Default is 0 (Temporary=5s). Force 2 (Always on) or 3 (Smart).
+            // 4. getShowStyle(Context) → force Always-on (2) on outer screen
             runCatching {
                 val method = utilsClass.method(
                     "getShowStyle", android.content.Context::class.java)
@@ -77,6 +80,15 @@ object AodHook : BaseHook() {
                 }
                 log("AodHook: hooked getShowStyle")
             }.onFailure { log("AodHook: getShowStyle failed", it) }
-        }.onFailure { log("AodHook: failed", it) }
+        }.onFailure { log("AodHook: Utils hooks failed", it) }
+
+        // 5. DozeHost.isFullAod() → false
+        //    When true, prepareAodViewAndShow() removes clock container → black AOD
+        runCatching {
+            val dozeHostClass = param.classLoader.loadClass("com.miui.aod.DozeHost")
+            val method = dozeHostClass.method("isFullAod")
+            hook(method, replaceResult(false))
+            log("AodHook: DozeHost.isFullAod → false")
+        }.onFailure { log("AodHook: isFullAod failed", it) }
     }
 }
