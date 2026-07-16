@@ -8,7 +8,7 @@ import com.example.flipunlock.hook.CameraHook
 import com.example.flipunlock.hook.CutoutHook
 import com.example.flipunlock.hook.DeviceIdentityHook
 import com.example.flipunlock.hook.WatchOverlayHook
-//import com.example.flipunlock.hook.ScreenTypeHook  // ⚠️ 内屏样式锁屏无法上滑
+import com.example.flipunlock.hook.ScreenTypeHook
 import com.example.flipunlock.hook.SystemUIHook
 //import com.example.flipunlock.hook.gesture.GestureHook
 import com.example.flipunlock.hook.system.AppBoundsHook
@@ -30,7 +30,7 @@ internal var module: Main? = null
 class Main : XposedModule() {
 
     private val hooks = listOf(
-//        ScreenTypeHook,  // ⚠️ 内屏样式锁屏无法上滑
+        ScreenTypeHook,  // 重新启用：Configuration.getScreenType → 0
         DeviceIdentityHook,  // ← IS_FLIP 已注释排查中
         AodHook,
         CameraHook,
