@@ -16,7 +16,7 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  * Fixes: restore isFlipDevice, then override individual methods.
  */
 object AodHook : BaseHook() {
-    override val targetPackages = listOf("com.miui.aod", "com.android.systemui")
+    override val targetPackages = listOf("*")
 
     override fun setupHooks(param: PackageReadyParam) {
         runCatching {
