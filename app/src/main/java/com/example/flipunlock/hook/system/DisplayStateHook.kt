@@ -112,21 +112,26 @@ object DisplayStateHook {
         runCatching {
             val cls = param.classLoader.loadClass(
                 "com.android.server.display.MiuiFlipPolicy")
-            hook(cls.method("shouldDeviceBeSleep"), replaceResult(false))
-            log("DisplayState/AOD: MiuiFlipPolicy.shouldDeviceBeSleep → false")
+            hook(cls.method("shouldDeviceBeSleep")) { chain ->
+                log("DisplayState/AOD: MiuiFlipPolicy.shouldDeviceBeSleep → false")
+                false
+            }
         }.onFailure { log("DisplayState/AOD: MiuiFlipPolicy failed", it) }
 
         // b) DisplayManagerServiceImpl.shouldDeviceBeSleep() → false
         runCatching {
             val cls = param.classLoader.loadClass(
                 "com.android.server.display.DisplayManagerServiceImpl")
-            hook(cls.method("shouldDeviceBeSleep",
+            val method = cls.method("shouldDeviceBeSleep",
                 android.util.SparseBooleanArray::class.java,
                 Int::class.javaPrimitiveType!!,
                 Int::class.javaPrimitiveType!!,
                 Boolean::class.javaPrimitiveType!!
-            ), replaceResult(false))
-            log("DisplayState/AOD: DisplayManagerServiceImpl.shouldDeviceBeSleep → false")
+            )
+            hook(method) { chain ->
+                log("DisplayState/AOD: DisplayManagerServiceImpl.shouldDeviceBeSleep → false")
+                false
+            }
         }.onFailure { log("DisplayState/AOD: DisplayManagerServiceImpl failed", it) }
 
         // c) PowerManagerService.updateRearDozeSettings() → force alwaysOn
@@ -141,12 +146,15 @@ object DisplayStateHook {
             )
             hook(method, before { chain ->
                 val groupId = chain.args[0] as? Int ?: return@before
+                val origAlwaysOn = chain.args[1]
+                val origFullAod = chain.args[2]
+                log("DisplayState/AOD: updateRearDozeSettings(groupId=$groupId, alwaysOn=$origAlwaysOn, fullAod=$origFullAod)")
                 if (groupId == 1) {
                     chain.args[1] = true  // alwaysOn
                     chain.args[2] = true  // isFullAod
+                    log("DisplayState/AOD: forced alwaysOn+fullAod for groupId=1")
                 }
             })
-            log("DisplayState/AOD: updateRearDozeSettings → alwaysOn for groupId 1")
         }.onFailure { log("DisplayState/AOD: updateRearDozeSettings failed", it) }
 
         // e) DreamController.stopDream → block timeout kills for groupId 1
@@ -159,10 +167,11 @@ object DisplayStateHook {
             method.isAccessible = true
             hook(method) { chain ->
                 val reason = chain.args[1] as? String ?: return@hook chain.proceed()
+                val groupId = chain.thisObject.getField("mGroupId") as? Int
+                log("DisplayState/AOD: DreamController.stopDream(reason=$reason, groupId=$groupId)")
                 if (reason == "slow to connect" || reason == "slow to finish") {
-                    val groupId = chain.thisObject.getField("mGroupId") as? Int
                     if (groupId == 1) {
-                        log("DisplayState/AOD: blocked stopDream '$reason' for groupId 1")
+                        log("DisplayState/AOD: BLOCKED stopDream '$reason' for groupId 1")
                         return@hook null
                     }
                 }
