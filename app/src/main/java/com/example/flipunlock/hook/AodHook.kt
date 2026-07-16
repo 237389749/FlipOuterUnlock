@@ -16,7 +16,7 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  * loaded by com.android.systemui process. Targeting "*"" ensures hooks fire.
  */
 object AodHook : BaseHook() {
-    override val targetPackages = listOf("com.android.systemui")
+    override val targetPackages = listOf("com.android.systemui", "com.miui.aod")
 
     override fun setupHooks(param: PackageReadyParam) {
         val pkg = param.packageName
