@@ -24,6 +24,12 @@ object AodHook : BaseHook() {
         val cl = param.classLoader
         log("AodHook: setupHooks pkg=$pkg cl=${cl.javaClass.name}")
 
+        // ── Framework-level hooks — ALWAYS install, no AOD classes needed ──
+        // AOD code ultimately calls DreamService.setDozeScreenState() through
+        // DreamServiceUtils. Hooking the framework DreamService bypasses the
+        // classloader problem entirely.
+        hookFrameworkDreamService(cl, pkg)
+
         // Quick check: can we find any AOD class at all?
         if (cl.findClassUp("com.miui.aod.doze.DozeMachine") == null) {
             log("AodHook: no AOD classes reachable from $pkg classloader — skipping")
@@ -178,6 +184,30 @@ object AodHook : BaseHook() {
         }.onFailure { log("AodHook: AODSettings.needKeepScreenOnAtFirst failed", it) }
 
         log("AodHook: setupHooks done for $pkg")
+    }
+
+    // ── Framework DreamService hooks — reachable from any classloader ────
+    // AOD's DozeService → DreamServiceUtils → DreamService.setDozeScreenState()
+    // This is the final common path for all doze screen state changes.
+    // Hook it directly to block OFF(1)/DOZE_SUSPEND(4) → force DOZE(2).
+    private fun hookFrameworkDreamService(cl: ClassLoader, pkg: String) {
+        runCatching {
+            val dsClass = cl.loadClass("android.service.dreams.DreamService")
+            val method = dsClass.getDeclaredMethod("setDozeScreenState",
+                Int::class.javaPrimitiveType!!)
+            method.isAccessible = true
+
+            hook(method) { chain ->
+                val state = chain.args[0] as? Int ?: return@hook chain.proceed()
+                log("AodHook/DreamService: setDozeScreenState($state) caller=${pkg}")
+                if (state == 1 || state == 4) {
+                    log("AodHook/DreamService: BLOCKED state $state → forcing 2 (DOZE)")
+                    chain.args[0] = 2  // DOZE = screen dim but ON
+                }
+                chain.proceed()
+            }
+            log("AodHook: ✓ DreamService.setDozeScreenState hooked (framework)")
+        }.onFailure { log("AodHook: DreamService.setDozeScreenState failed", it) }
     }
 
     /** Debug: dump classloader chain + DexPathList entries */
