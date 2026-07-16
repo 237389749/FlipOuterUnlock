@@ -104,12 +104,18 @@ object DisplayStateHook {
 
     // ── 4. AOD on outer screen: prevent sleep + block dream timeouts ───
     //
-    // a) MiuiFlipPolicy.shouldDeviceBeSleep() → false
-    // b) DisplayManagerServiceImpl.shouldDeviceBeSleep() → false
+    // a) MiuiFlipPolicy.shouldDeviceBeSleep() → COMMENTED OUT
+    //    Blocking this prevents the device from entering dreaming state,
+    //    which means handleRearSandman never fires → dream never starts.
+    // b) DisplayManagerServiceImpl.shouldDeviceBeSleep() → COMMENTED OUT
+    //    Same reasoning — let the sleep process initiate so dream can start.
     // c) PowerManagerService.updateRearDozeSettings() → force alwaysOn+isFullAod
     // e) DreamController.stopDream → block "slow to connect/finish" for groupId 1
     private fun hookAodOuterScreen(param: SystemServerStartingParam) {
-        // a) MiuiFlipPolicy.shouldDeviceBeSleep() → false
+        // a) MiuiFlipPolicy.shouldDeviceBeSleep() → COMMENTED OUT
+        //    Let device enter sleep state so handleRearSandman can start the dream.
+        //    The dream's screen state is controlled by DozeMachine hooks instead.
+        /*
         runCatching {
             val cls = param.classLoader.loadClass(
                 "com.android.server.display.MiuiFlipPolicy")
@@ -118,8 +124,10 @@ object DisplayStateHook {
                 false
             }
         }.onFailure { log("DisplayState/AOD: MiuiFlipPolicy failed", it) }
+        */
 
-        // b) DisplayManagerServiceImpl.shouldDeviceBeSleep() → false
+        // b) DisplayManagerServiceImpl.shouldDeviceBeSleep() → COMMENTED OUT
+        /*
         runCatching {
             val cls = param.classLoader.loadClass(
                 "com.android.server.display.DisplayManagerServiceImpl")
@@ -134,6 +142,7 @@ object DisplayStateHook {
                 false
             }
         }.onFailure { log("DisplayState/AOD: DisplayManagerServiceImpl failed", it) }
+        */
 
         // c) PowerManagerService.updateRearDozeSettings() → force alwaysOn
         runCatching {
