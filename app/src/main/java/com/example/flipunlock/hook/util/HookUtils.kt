@@ -15,7 +15,8 @@ internal fun safeHook(name: String, block: () -> Unit) {
 }
 
 internal fun log(msg: String, e: Throwable? = null) {
-    module?.log(Log.ERROR, LOG_TAG, msg, e)
+    // Use android.util.Log directly — LSPosed module.log() may not go to logcat
+    if (e != null) Log.e(LOG_TAG, msg, e) else Log.e(LOG_TAG, msg)
 }
 
 internal fun hook(origin: Executable, hooker: Hooker): HookHandle =
