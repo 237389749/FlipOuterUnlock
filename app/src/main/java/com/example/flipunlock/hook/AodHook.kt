@@ -90,5 +90,29 @@ object AodHook : BaseHook() {
             hook(method, replaceResult(false))
             log("AodHook: DozeHost.isFullAod → false")
         }.onFailure { log("AodHook: isFullAod failed", it) }
+
+        // 6. AODSettings.needKeepScreenOnAtFirst() → false
+        runCatching {
+            val cls = param.classLoader.loadClass("com.miui.aod.widget.AODSettings")
+            val method = cls.method("needKeepScreenOnAtFirst")
+            hook(method, replaceResult(false))
+            log("AodHook: needKeepScreenOnAtFirst → false")
+        }.onFailure { log("AodHook: needKeepScreenOnAtFirst failed", it) }
+
+        // 7. DozeService.setDozeScreenState(int) → block OFF/SUSPEND
+        runCatching {
+            val cls = param.classLoader.loadClass("com.miui.aod.doze.DozeService")
+            val method = cls.method(
+                "setDozeScreenState", Int::class.javaPrimitiveType!!)
+            hook(method) { chain ->
+                val state = chain.args[0] as? Int ?: return@hook chain.proceed()
+                if (state == 1 || state == 4) {
+                    log("AodHook: blocked setDozeScreenState($state)")
+                    return@hook null
+                }
+                chain.proceed()
+            }
+            log("AodHook: hooked DozeService.setDozeScreenState")
+        }.onFailure { log("AodHook: setDozeScreenState failed", it) }
     }
 }
