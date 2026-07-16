@@ -12,22 +12,30 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  *   3. Hook DozeService.setDozeScreenState(int) — block screen OFF/SUSPEND
  *   4. App-side gates (Utils, DozeHost, AODSettings) — override flip/AOD checks
  *
- * Target "*" — AOD classes (com.miui.aod.*) live in miuisystemui.apk,
- * loaded by com.android.systemui process. Targeting "*"" ensures hooks fire.
+ * AOD classes (com.miui.aod.*) live in miuisystem.apk, NOT MiuiSystemUI.apk.
+ * miuisystem.apk is loaded by a parent classloader — we walk up the hierarchy
+ * with findClassUp() to locate classes regardless of which classloader owns them.
  */
 object AodHook : BaseHook() {
     override val targetPackages = listOf("com.android.systemui", "com.miui.aod")
 
     override fun setupHooks(param: PackageReadyParam) {
         val pkg = param.packageName
-        log("AodHook: setupHooks pkg=$pkg")
+        val cl = param.classLoader
+        log("AodHook: setupHooks pkg=$pkg cl=${cl.javaClass.name}")
+
+        // Quick check: can we find any AOD class at all?
+        if (cl.findClassUp("com.miui.aod.doze.DozeMachine") == null) {
+            log("AodHook: no AOD classes reachable from $pkg classloader — skipping")
+            log("AodHook: cl chain: ${classLoaderChain(cl)}")
+            return
+        }
+        log("AodHook: AOD classes found! Proceeding...")
 
         // ── §1. DozeMachine.requestState(State) — THE state machine ──────
-        // Intercept every state transition. If anything tries DOZE or
-        // DOZE_SUSPEND, redirect to DOZE_AOD so the screen stays on.
         runCatching {
-            val machineClass = param.classLoader.loadClass("com.miui.aod.doze.DozeMachine")
-            val stateClass = param.classLoader.loadClass("com.miui.aod.doze.DozeMachine\$State")
+            val machineClass = cl.findClassUp("com.miui.aod.doze.DozeMachine")!!
+            val stateClass = cl.findClassUp("com.miui.aod.doze.DozeMachine\$State")!!
             val method = machineClass.getDeclaredMethod("requestState", stateClass)
             method.isAccessible = true
 
@@ -47,14 +55,12 @@ object AodHook : BaseHook() {
                 chain.proceed()
             }
             log("AodHook: ✓ DozeMachine.requestState hooked")
-        }.onFailure { log("AodHook: DozeMachine.requestState not found in $pkg", it) }
+        }.onFailure { log("AodHook: DozeMachine.requestState failed", it) }
 
         // ── §2. DozeService.dreamingStarted(ViewGroup) — entry point ─────
-        // After the dream starts and calls requestState(INITIALIZED),
-        // immediately force requestState(DOZE_AOD) to jump-start AOD.
         runCatching {
-            val svcClass = param.classLoader.loadClass("com.miui.aod.doze.DozeService")
-            val stateClass = param.classLoader.loadClass("com.miui.aod.doze.DozeMachine\$State")
+            val svcClass = cl.findClassUp("com.miui.aod.doze.DozeService")!!
+            val stateClass = cl.findClassUp("com.miui.aod.doze.DozeMachine\$State")!!
             val method = svcClass.getDeclaredMethod("dreamingStarted",
                 android.view.ViewGroup::class.java)
             method.isAccessible = true
@@ -76,13 +82,11 @@ object AodHook : BaseHook() {
                 }
             })
             log("AodHook: ✓ DozeService.dreamingStarted hooked")
-        }.onFailure { log("AodHook: DozeService.dreamingStarted not found in $pkg", it) }
+        }.onFailure { log("AodHook: DozeService.dreamingStarted failed", it) }
 
         // ── §3. DozeService.setDozeScreenState(int) — block OFF/SUSPEND ──
-        // Screen state values: 1=OFF, 2=DOZE(dim but on), 3/4=SUSPEND
-        // Block 1 (OFF) and 4 (SUSPEND). Force state 2 (DOZE) instead.
         runCatching {
-            val svcClass = param.classLoader.loadClass("com.miui.aod.doze.DozeService")
+            val svcClass = cl.findClassUp("com.miui.aod.doze.DozeService")!!
             val method = svcClass.getDeclaredMethod("setDozeScreenState",
                 Int::class.javaPrimitiveType!!)
             method.isAccessible = true
@@ -97,38 +101,33 @@ object AodHook : BaseHook() {
                 chain.proceed()
             }
             log("AodHook: ✓ DozeService.setDozeScreenState hooked")
-        }.onFailure { log("AodHook: DozeService.setDozeScreenState not found in $pkg", it) }
+        }.onFailure { log("AodHook: DozeService.setDozeScreenState failed", it) }
 
         // ── §4. Utils hooks — app-side gates ────────────────────────────
         runCatching {
-            val utilsClass = param.classLoader.loadClass("com.miui.aod.Utils")
-            log("AodHook: Utils class found in $pkg")
+            val utilsClass = cl.findClassUp("com.miui.aod.Utils")!!
 
-            // 4a. isFlipDevice() → true (reverses DeviceIdentityHook for AOD)
             runCatching {
                 val method = utilsClass.method("isFlipDevice")
                 hook(method, replaceResult(true))
                 log("AodHook: ✓ isFlipDevice → true")
             }.onFailure { log("AodHook: isFlipDevice failed", it) }
 
-            // 4b. isAodEnable(Context) → force true on outer screen
             runCatching {
                 val method = utilsClass.method("isAodEnable", android.content.Context::class.java)
                 hook(method) { chain ->
                     val ctx = chain.args[0] as? android.content.Context
                     val metrics = ctx?.resources?.displayMetrics
-                    val result = if (metrics != null && metrics.heightPixels in 1000..1500) {
+                    if (metrics != null && metrics.heightPixels in 1000..1500) {
                         log("AodHook: isAodEnable → true (outer ${metrics.heightPixels}px)")
                         true
                     } else {
                         chain.proceed()
                     }
-                    result
                 }
                 log("AodHook: ✓ isAodEnable hooked")
             }.onFailure { log("AodHook: isAodEnable failed", it) }
 
-            // 4c. isFolded(Context) → force true on outer screen
             runCatching {
                 val method = utilsClass.method("isFolded", android.content.Context::class.java)
                 hook(method) { chain ->
@@ -144,7 +143,6 @@ object AodHook : BaseHook() {
                 log("AodHook: ✓ isFolded hooked")
             }.onFailure { log("AodHook: isFolded failed", it) }
 
-            // 4d. getShowStyle(Context) → force Always-on (2) on outer screen
             runCatching {
                 val method = utilsClass.method("getShowStyle", android.content.Context::class.java)
                 hook(method) { chain ->
@@ -161,25 +159,38 @@ object AodHook : BaseHook() {
                 log("AodHook: ✓ getShowStyle hooked")
             }.onFailure { log("AodHook: getShowStyle failed", it) }
 
-        }.onFailure { log("AodHook: Utils class not found in $pkg", it) }
+        }.onFailure { log("AodHook: Utils not found", it) }
 
         // ── §5. DozeHost.isFullAod() → false ────────────────────────────
-        // When true, prepareAodViewAndShow() removes clock container → black screen
         runCatching {
-            val dozeHostClass = param.classLoader.loadClass("com.miui.aod.DozeHost")
+            val dozeHostClass = cl.findClassUp("com.miui.aod.DozeHost")!!
             val method = dozeHostClass.method("isFullAod")
             hook(method, replaceResult(false))
             log("AodHook: ✓ DozeHost.isFullAod → false")
-        }.onFailure { log("AodHook: DozeHost.isFullAod not found in $pkg", it) }
+        }.onFailure { log("AodHook: DozeHost.isFullAod failed", it) }
 
         // ── §6. AODSettings.needKeepScreenOnAtFirst() → false ────────────
         runCatching {
-            val cls = param.classLoader.loadClass("com.miui.aod.widget.AODSettings")
+            val cls = cl.findClassUp("com.miui.aod.widget.AODSettings")!!
             val method = cls.method("needKeepScreenOnAtFirst")
             hook(method, replaceResult(false))
             log("AodHook: ✓ needKeepScreenOnAtFirst → false")
-        }.onFailure { log("AodHook: AODSettings.needKeepScreenOnAtFirst not found in $pkg", it) }
+        }.onFailure { log("AodHook: AODSettings.needKeepScreenOnAtFirst failed", it) }
 
         log("AodHook: setupHooks done for $pkg")
+    }
+
+    /** Debug: dump classloader chain for diagnosis */
+    private fun classLoaderChain(loader: ClassLoader?): String {
+        val sb = StringBuilder()
+        var cl = loader
+        var depth = 0
+        while (cl != null && depth < 10) {
+            if (sb.isNotEmpty()) sb.append(" → ")
+            sb.append("[$depth] ${cl.javaClass.simpleName}")
+            cl = cl.parent
+            depth++
+        }
+        return sb.toString()
     }
 }

@@ -10,6 +10,16 @@ import java.lang.reflect.Executable
 
 private const val LOG_TAG = "FlipOuterUnlock"
 
+/** Walk up the classloader hierarchy until the class is found. */
+internal fun ClassLoader.findClassUp(name: String): Class<*>? {
+    var cl: ClassLoader? = this
+    while (cl != null) {
+        try { return cl.loadClass(name) }
+        catch (_: ClassNotFoundException) { cl = cl.parent }
+    }
+    return null
+}
+
 internal fun safeHook(name: String, block: () -> Unit) {
     runCatching(block).onFailure { log("[$name] failed", it) }
 }
