@@ -56,6 +56,24 @@ object CutoutHook : BaseHook() {
                 result
             })
         }.onFailure { log("CutoutFix: failed hook parser", it) }
+
+        // Hook computeSafeInsets — intercept right-edge safe inset calculation
+        runCatching {
+            val parserClass = classLoader.loadClass("android.view.CutoutSpecification\$Parser")
+            val method = parserClass.getDeclaredMethod("computeSafeInsets",
+                Int::class.javaPrimitiveType!!,
+                android.graphics.Rect::class.java)
+            method.isAccessible = true
+            hook(method) { chain ->
+                val gravity = chain.args[0] as? Int ?: return@hook chain.proceed()
+                if (gravity == 5) {  // 5 = RIGHT edge
+                    log("CutoutFix: computeSafeInsets(gravity=5) → 0")
+                    0
+                } else {
+                    chain.proceed()
+                }
+            }
+        }.onFailure { log("CutoutFix: failed hook computeSafeInsets", it) }
     }
 
     private fun hookDisplayGetCutout() {
