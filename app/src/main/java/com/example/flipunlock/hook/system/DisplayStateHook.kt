@@ -25,6 +25,7 @@ object DisplayStateHook {
         log("DisplayStateHook: setting up")
         safeHook("DisplayStateHook") {
             hookDisplayToClosed(param)
+            hookDisplayLayoutGet(param)
             hookAppLayerToUnfolded(param)
             hookDisplayInfoForStateToClosed(param)
             hookAodOuterScreen(param)
@@ -58,6 +59,32 @@ object DisplayStateHook {
             }
             log("DisplayState: forced LogicalDisplayMapper -> always CLOSED (outer screen)")
         }.onFailure { log("DisplayState: failed hook LogicalDisplayMapper", it) }
+    }
+
+    // ── 1b. DeviceStateToLayoutMap.get(int) — the choke point ─────────────
+    // All queries for display layout go through this method.
+    // Force return state=0 (CLOSED) layout regardless of requested state,
+    // so the outer screen (port 132) is always active.
+    // More reliable than faking DeviceState — controls the output directly.
+    private fun hookDisplayLayoutGet(param: SystemServerStartingParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "com.android.server.display.DeviceStateToLayoutMap")
+            val method = cls.getDeclaredMethod("get", Int::class.javaPrimitiveType!!)
+            method.isAccessible = true
+
+            hook(method) { chain ->
+                val state = chain.args[0] as? Int ?: return@hook chain.proceed()
+                val layoutMap = chain.thisObject.getField("mLayoutMap")
+                // Always return the CLOSED (state=0) layout
+                val closedLayout = (layoutMap as android.util.SparseArray<*>).get(0)
+                if (state != 0) {
+                    log("DisplayState/Layout: get($state) → forcing layout for state=0")
+                }
+                closedLayout ?: chain.proceed()
+            }
+            log("DisplayState: ✓ DeviceStateToLayoutMap.get hooked → always state=0 layout")
+        }.onFailure { log("DisplayState: failed hook DeviceStateToLayoutMap.get", it) }
     }
 
     // ── 2. App layer: always unfolded → flip restrictions disabled ──────
