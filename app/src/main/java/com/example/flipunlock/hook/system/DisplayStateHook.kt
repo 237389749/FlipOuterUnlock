@@ -62,8 +62,13 @@ object DisplayStateHook {
     }
 
     // ── 1b. DeviceStateToLayoutMap.get(int) — the choke point ─────────────
-    // Force return state=-1 (DEFAULT) layout regardless of requested state.
-    // Default layout has BOTH displays ON — truly unrestricted.
+    // Only redirect when the requested state would turn OFF the outer screen.
+    // States where outer screen is already ON (0,1,4,5,6,-1): pass through.
+    // States where outer screen is OFF (2,3=OPENED): force state=0 (CLOSED).
+    //
+    // Tradeoff: when physically unfolded (state 2), inner screen won't work.
+    // This module's purpose IS to keep outer screen active — if you want the
+    // inner screen when unfolded, this hook needs to be removed.
     private fun hookDisplayLayoutGet(param: SystemServerStartingParam) {
         runCatching {
             val cls = param.classLoader.loadClass(
@@ -73,15 +78,16 @@ object DisplayStateHook {
 
             hook(method) { chain ->
                 val state = chain.args[0] as? Int ?: return@hook chain.proceed()
-                val layoutMap = chain.thisObject.getField("mLayoutMap")
-                // Return CLOSED (state=0) layout → outer screen only (no inner screen)
-                val closedLayout = (layoutMap as android.util.SparseArray<*>).get(0)
-                if (state != -1) {
-                    log("DisplayState/Layout: get($state) → forcing layout for state=0 (CLOSED)")
+                // Only override unfolded states (inner screen would replace outer)
+                if (state != 2 && state != 3) {
+                    return@hook chain.proceed()  // outer already ON
                 }
+                val layoutMap = chain.thisObject.getField("mLayoutMap")
+                val closedLayout = (layoutMap as android.util.SparseArray<*>).get(0)
+                log("DisplayState/Layout: get($state) → forcing layout for state=0")
                 closedLayout ?: chain.proceed()
             }
-            log("DisplayState: ✓ DeviceStateToLayoutMap.get hooked → always state=0 (CLOSED)")
+            log("DisplayState: ✓ DeviceStateToLayoutMap.get hooked → redirects state 2,3 to 0")
         }.onFailure { log("DisplayState: failed hook DeviceStateToLayoutMap.get", it) }
     }
 
