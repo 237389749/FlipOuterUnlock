@@ -90,7 +90,7 @@ object CutoutHook : BaseHook() {
             } ?: return@runCatching
             method.isAccessible = true
 
-            val noCutout: Any = dcClass.getDeclaredField("NO_CUTOUT").also { it.isAccessible = true }.get(null)
+            val noCutout = dcClass.getDeclaredField("NO_CUTOUT").also { it.isAccessible = true }.get(null)!!
             val pairClass = classLoader.loadClass("android.util.Pair")
             val pairCtor = pairClass.getConstructor(Any::class.java, Any::class.java)
 

@@ -81,7 +81,7 @@ object AodHook : BaseHook() {
             log("AodHook/L2: found DozeMachine! cl=${machine.javaClass.classLoader.javaClass.simpleName}")
 
             // Use the machine's classloader — it HAS the AOD classes!
-            val machineCl = machine.javaClass.classLoader
+            val machineCl = machine.javaClass.classLoader ?: run { log("AodHook/L2: classLoader is null"); return }
             val stateClass = machineCl.loadClass("com.miui.aod.doze.DozeMachine\$State")
             val values = stateClass.getMethod("values").invoke(null) as Array<*>
             val dozeAod = values.first { it.toString() == "DOZE_AOD" }

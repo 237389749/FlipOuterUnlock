@@ -34,6 +34,9 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    lint {
+        disable += "SoonBlockedPrivateApi"
+    }
 }
 
 kotlin {
