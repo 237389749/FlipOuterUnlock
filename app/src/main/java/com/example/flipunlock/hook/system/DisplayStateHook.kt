@@ -62,10 +62,8 @@ object DisplayStateHook {
     }
 
     // ── 1b. DeviceStateToLayoutMap.get(int) — the choke point ─────────────
-    // All queries for display layout go through this method.
-    // Force return state=0 (CLOSED) layout regardless of requested state,
-    // so the outer screen (port 132) is always active.
-    // More reliable than faking DeviceState — controls the output directly.
+    // Force return state=-1 (DEFAULT) layout regardless of requested state.
+    // Default layout has BOTH displays ON — truly unrestricted.
     private fun hookDisplayLayoutGet(param: SystemServerStartingParam) {
         runCatching {
             val cls = param.classLoader.loadClass(
@@ -76,14 +74,14 @@ object DisplayStateHook {
             hook(method) { chain ->
                 val state = chain.args[0] as? Int ?: return@hook chain.proceed()
                 val layoutMap = chain.thisObject.getField("mLayoutMap")
-                // Always return the CLOSED (state=0) layout
-                val closedLayout = (layoutMap as android.util.SparseArray<*>).get(0)
-                if (state != 0) {
-                    log("DisplayState/Layout: get($state) → forcing layout for state=0")
+                // Return DEFAULT (state=-1) layout → both screens ON, unrestricted
+                val defaultLayout = (layoutMap as android.util.SparseArray<*>).get(-1)
+                if (state != -1) {
+                    log("DisplayState/Layout: get($state) → forcing layout for state=-1 (DEFAULT)")
                 }
-                closedLayout ?: chain.proceed()
+                defaultLayout ?: chain.proceed()
             }
-            log("DisplayState: ✓ DeviceStateToLayoutMap.get hooked → always state=0 layout")
+            log("DisplayState: ✓ DeviceStateToLayoutMap.get hooked → always state=-1 (DEFAULT)")
         }.onFailure { log("DisplayState: failed hook DeviceStateToLayoutMap.get", it) }
     }
 
