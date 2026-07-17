@@ -24,6 +24,7 @@ object CutoutHook : BaseHook() {
         log("CutoutHook-framework: setting up in system_server")
         safeHook("CutoutHook-framework") {
             hookCutoutParser(param.classLoader)
+            hookPathAndDisplayCutoutFromSpec(param.classLoader)
             hookDisplayGetCutout()
             hookDisplayFlipFoldedCutout()
         }
@@ -32,6 +33,7 @@ object CutoutHook : BaseHook() {
     override fun setupHooks(param: PackageReadyParam) {
         log("CutoutHook: loading for ${param.packageName}")
         hookCutoutParser(param.classLoader)
+        hookPathAndDisplayCutoutFromSpec(param.classLoader)
         hookDisplayGetCutout()
         hookDisplayFlipFoldedCutout()
         hookDisplayUtilsGetCutoutPosition(param)
@@ -74,6 +76,34 @@ object CutoutHook : BaseHook() {
                 }
             }
         }.onFailure { log("CutoutFix: failed hook computeSafeInsets", it) }
+    }
+
+    // Hook DisplayCutout.pathAndDisplayCutoutFromSpec — THE single choke point
+    // where ALL cutout strings (resource-loaded or direct-spec) are parsed.
+    // Blocking here skips the entire Parser → CutoutSpecification → DisplayCutout pipeline.
+    private fun hookPathAndDisplayCutoutFromSpec(classLoader: ClassLoader) {
+        runCatching {
+            val dcClass = classLoader.loadClass("android.view.DisplayCutout")
+            // private static Pair<Path, DisplayCutout> pathAndDisplayCutoutFromSpec(...)
+            val method = dcClass.declaredMethods.firstOrNull {
+                it.name == "pathAndDisplayCutoutFromSpec" && it.parameterCount == 9
+            } ?: return@runCatching
+            method.isAccessible = true
+
+            val noCutout: Any = dcClass.getDeclaredField("NO_CUTOUT").also { it.isAccessible = true }.get(null)
+            val pairClass = classLoader.loadClass("android.util.Pair")
+            val pairCtor = pairClass.getConstructor(Any::class.java, Any::class.java)
+
+            hook(method, Hooker { chain ->
+                val pathSpec = chain.args[0] as? String ?: ""
+                if (pathSpec.contains("@bind_right_cutout") || pathSpec.contains("M 604,664")) {
+                    log("CutoutFix: blocked outer screen cutout at pathAndDisplayCutoutFromSpec")
+                    pairCtor.newInstance(null, noCutout) // Pair(null, NO_CUTOUT)
+                } else {
+                    chain.proceed()
+                }
+            })
+        }.onFailure { log("CutoutFix: failed hook pathAndDisplayCutoutFromSpec", it) }
     }
 
     private fun hookDisplayGetCutout() {
