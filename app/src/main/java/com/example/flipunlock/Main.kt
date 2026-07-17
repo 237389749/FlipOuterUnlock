@@ -11,14 +11,14 @@ import com.example.flipunlock.hook.DeviceIdentityHook
 import com.example.flipunlock.hook.WatchOverlayHook
 import com.example.flipunlock.hook.ScreenTypeHook
 import com.example.flipunlock.hook.SystemUIHook
-//import com.example.flipunlock.hook.gesture.GestureHook
+import com.example.flipunlock.hook.gesture.GestureHook
 import com.example.flipunlock.hook.system.AppBoundsHook
 import com.example.flipunlock.hook.system.CompatConfigHook
 import com.example.flipunlock.hook.system.DisplayStateHook
 import com.example.flipunlock.hook.system.InputMethodHook
 import com.example.flipunlock.hook.system.InterceptHook
 import com.example.flipunlock.hook.system.LetterboxHook
-//import com.example.flipunlock.hook.system.SubScreenGestureHook
+import com.example.flipunlock.hook.system.SubScreenGestureHook
 import com.example.flipunlock.hook.system.SystemServicesHook
 import com.example.flipunlock.hook.system.WhitelistHook
 import io.github.libxposed.api.XposedModule
@@ -37,7 +37,7 @@ class Main : XposedModule() {
         CameraHook,
         CutoutHook,
         SystemUIHook,
-//        GestureHook,
+        GestureHook,
 //        LauncherDensityHook,  // TODO: density tweak not working
         SogouInputHook,
         ActivityLifecycleHook,
@@ -53,7 +53,7 @@ class Main : XposedModule() {
         CutoutHook.hookFramework(param)
         LetterboxHook.hook(param)
         WhitelistHook.hook(param)
-//        SubScreenGestureHook.hook(param)
+        SubScreenGestureHook.hook(param)
         DisplayStateHook.hook(param)
         CompatConfigHook.hook(param)
         AppBoundsHook.hook(param)
