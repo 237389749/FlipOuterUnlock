@@ -16,7 +16,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.flipunlock"
-        minSdk = 34
+        minSdk = 33
         targetSdk = 36
         versionCode = 9
         versionName = "2.6.1"
