@@ -74,14 +74,14 @@ object DisplayStateHook {
             hook(method) { chain ->
                 val state = chain.args[0] as? Int ?: return@hook chain.proceed()
                 val layoutMap = chain.thisObject.getField("mLayoutMap")
-                // Return DEFAULT (state=-1) layout → both screens ON, unrestricted
-                val defaultLayout = (layoutMap as android.util.SparseArray<*>).get(-1)
+                // Return CLOSED (state=0) layout → outer screen only (no inner screen)
+                val closedLayout = (layoutMap as android.util.SparseArray<*>).get(0)
                 if (state != -1) {
-                    log("DisplayState/Layout: get($state) → forcing layout for state=-1 (DEFAULT)")
+                    log("DisplayState/Layout: get($state) → forcing layout for state=0 (CLOSED)")
                 }
-                defaultLayout ?: chain.proceed()
+                closedLayout ?: chain.proceed()
             }
-            log("DisplayState: ✓ DeviceStateToLayoutMap.get hooked → always state=-1 (DEFAULT)")
+            log("DisplayState: ✓ DeviceStateToLayoutMap.get hooked → always state=0 (CLOSED)")
         }.onFailure { log("DisplayState: failed hook DeviceStateToLayoutMap.get", it) }
     }
 
