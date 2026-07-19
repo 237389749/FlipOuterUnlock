@@ -42,21 +42,18 @@ object SubScreenGestureHook {
                     val existing = runCatching {
                         cls.callMethod("getInstance")
                     }.getOrNull()
-                    if (existing != null) {
-                        chain.proceed()
-                    } else {
+                    if (existing == null) {
                         val context = chain.args[0] as? android.content.Context
                         if (context != null) {
                             val constructor = cls.getDeclaredConstructor(
                                 android.content.Context::class.java)
                             constructor.isAccessible = true
                             val instance = constructor.newInstance(context)
-                                cls.field("sInstance").set(null, instance)
-                                log("SubScreenGesture: initialized for Mix Flip external display!")
-                            }
+                            cls.field("sInstance").set(null, instance)
+                            log("SubScreenGesture: initialized for Mix Flip external display!")
                         }
-                        chain.proceed()
                     }
+                    chain.proceed()
                 }
 
                 // Fix: redirect displayId 1→0 for registerPointerEventListener.
