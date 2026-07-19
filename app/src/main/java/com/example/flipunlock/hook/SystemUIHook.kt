@@ -176,49 +176,30 @@ object SystemUIHook : BaseHook() {
     // consume the event — let it fall through to the shortcut container below.
     // For swipe-up unlock, also set the result to false when mBarState is wrong.
     private fun hookLockScreenTouchFix(param: PackageReadyParam) {
-        // The tiny lock screen panel (TinyKeyguardPanelView) renders on top of
-        // the shortcut container, blocking shortcut clicks. It also has complex
-        // internal state (mBarState, mCanDismissLockScreen, mInteractive) that
-        // can prevent swipe-up unlock from working.
+        // The tiny lock screen panel (TinyKeyguardPanelView) is a full-screen
+        // FrameLayout that overlays the shortcut container. Its TouchHandler
+        // intercepts and consumes ALL touches, blocking shortcut clicks and
+        // sometimes preventing swipe-up unlock (state-dependent).
         //
-        // Fix: make the panel not intercept touches so they fall through to
-        // the shortcut container. The panel stays visible (lock screen content
-        // still renders), but all touch events pass through.
+        // Fix: hook ViewGroup.onInterceptTouchEvent, filter for the panel by
+        // class name, and return false so touches pass through to the shortcut
+        // container underneath. The panel stays visible but doesn't steal touches.
         runCatching {
-            val panelClass = findClass(param.classLoader,
-                "com.android.keyguard.tinyPanel.TinyKeyguardPanelView",
-                "com.android.keyguard.tinypanel.TinyKeyguardPanelView")
-            if (panelClass == null) {
-                log("SystemUI/LockScreen: TinyKeyguardPanelView class not found")
-                return@runCatching
-            }
-            // Hook onAttachedToWindow — after attach, disable touch interception
-            val attachMethod = panelClass.getMethod("onAttachedToWindow")
-            hook(attachMethod, after { chain, result ->
-                val view = chain.thisObject as? android.view.View ?: return@after result
-                // Disable touch interception for the panel itself
-                view.isClickable = false
-                view.isFocusable = false
-                // Make entire panel non-intercepting so touches reach children/siblings
-                runCatching {
-                    val lp = view.layoutParams as? android.view.WindowManager.LayoutParams
-                    if (lp != null) {
-                        lp.flags = lp.flags or android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                        val wm = view.context.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
-                        wm.updateViewLayout(view, lp)
-                    }
+            val interceptMethod = android.view.ViewGroup::class.java
+                .getDeclaredMethod("onInterceptTouchEvent", android.view.MotionEvent::class.java)
+            interceptMethod.isAccessible = true
+            hook(interceptMethod) { chain ->
+                val view = chain.thisObject
+                val name = view?.javaClass?.name ?: ""
+                if (name.contains("TinyKeyguardPanelView")) {
+                    // Let touches pass through to the shortcut container below
+                    log("SystemUI/LockScreen: bypass TinyKeyguardPanelView.onInterceptTouchEvent")
+                    return@hook false
                 }
-                log("SystemUI/LockScreen: TinyKeyguardPanelView → NOT_TOUCHABLE")
-                result
-            })
-            log("SystemUI: hooked TinyKeyguardPanelView.onAttachedToWindow")
-        }.onFailure { log("SystemUI: TinyKeyguardPanelView hook failed", it) }
+                chain.proceed()
+            }
+            log("SystemUI: hooked ViewGroup.onInterceptTouchEvent → TinyKeyguardPanelView filter")
+        }.onFailure { log("SystemUI: onInterceptTouchEvent hook failed", it) }
     }
 
-    private fun findClass(cl: ClassLoader, vararg names: String): Class<*>? {
-        for (name in names) {
-            runCatching { return cl.loadClass(name) }
-        }
-        return null
-    }
 }
