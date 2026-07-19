@@ -47,12 +47,10 @@ object SubScreenGestureHook {
                     } else {
                         val context = chain.args[0] as? android.content.Context
                         if (context != null) {
-                            val constructor = cls.declaredConstructors.firstOrNull {
-                                it.parameterCount == 1
-                            }
-                            if (constructor != null) {
-                                constructor.isAccessible = true
-                                val instance = constructor.newInstance(context)
+                            val constructor = cls.getDeclaredConstructor(
+                                android.content.Context::class.java)
+                            constructor.isAccessible = true
+                            val instance = constructor.newInstance(context)
                                 cls.field("sInstance").set(null, instance)
                                 log("SubScreenGesture: initialized for Mix Flip external display!")
                             }
