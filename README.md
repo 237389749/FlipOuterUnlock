@@ -123,25 +123,12 @@ For CI, add GitHub Secrets: `KEYSTORE` (base64), `KEYSTORE_PASSWORD`, `ALIAS`, `
 
 ### TODO
 
+- **CameraHook** — Front camera redirect on outer screen (not yet verified working — needs real device test)
 - **FaceUnlock** — Face unlock on outer screen (confirmed infeasible — see below)
-
-> Face unlock communicates directly with the Face HAL daemon (`vendor.xiaomi.hardware.face@1.0-service`) via AIDL binder. The camera is opened INSIDE this native daemon process — `FaceProvider` in `services.jar` never calls `CameraManager`. LSPosed only works in Java processes and cannot hook native HAL binaries. All potential Java-layer hook points (blocking `startHalOperation`, returning null from `getHalInstance`, returning false from `isHardwareDetected`) would only disable face unlock entirely, not redirect the camera.
->
-> Full chain: `FaceService → FaceProvider → FaceAuthenticationClient → session.getSession().authenticate() → [HAL daemon opens camera internally]`
->
-> See `refMD/cleaned/Camera.md` §8 for the complete FlipRes-based analysis.
 
 ### Known Issues (Unfolded State)
 
-This module is designed for MIX Flip with the **inner screen physically removed**. For users who still have the inner screen installed, two issues occur when the device is unfolded:
-
-1. **Both screens ON simultaneously**: `DisplayStateHook` forces `DeviceStateToLayoutMap.get()` to always return state=6 (DUAL), which enables both displays. When the inner screen is physically present, it also stays active — causing extended desktop behavior and increased battery drain.
-
-2. **Front camera always redirected**: `CameraHook` unconditionally redirects front camera → back camera. When unfolded, the front camera (inner screen camera) is physically accessible, but the hook still blocks it. Users cannot take selfies even when the phone is fully open.
-
-If you use the module with the inner screen intact, you can disable these hooks by commenting them out in `Main.kt`:
-- `DisplayStateHook` → comment out the `hookDisplayLayoutGet` call in `DisplayStateHook.kt`
-- `CameraHook` → comment out in the hooks list
+As of v2.8, `DisplayStateHook` and `CameraHook` include a fold-state guard (`isOuterScreen()`: display height < 2000px). When the device is unfolded with the inner screen intact, these hooks are automatically disabled — the native display topology and front camera work normally. No manual configuration needed.
 
 ### License
 
@@ -218,25 +205,12 @@ CI: GitHub Secrets → `KEYSTORE`(base64), `KEYSTORE_PASSWORD`, `ALIAS`, `KEY_PA
 
 ### 未完成
 
+- **CameraHook** — 外屏前置摄像头重定向（尚未在真机验证是否生效）
 - **FaceUnlock** — 外屏人脸解锁（已确认不可行 — 详见下）
-
-> 人脸解锁通过 AIDL binder 直接与 Face HAL daemon (`vendor.xiaomi.hardware.face@1.0-service`) 通信。摄像头在 native daemon 进程内部打开 — `services.jar` 中的 `FaceProvider` 从不调用 `CameraManager`。LSPosed 仅在 Java 进程工作，无法 hook native HAL 二进制文件。所有可能的 Java 层 hook 点（阻止 `startHalOperation`、`getHalInstance` 返回 null、`isHardwareDetected` 返回 false）只能完全禁用人脸解锁，无法重定向摄像头。
->
-> 完整链: `FaceService → FaceProvider → FaceAuthenticationClient → session.getSession().authenticate() → [HAL daemon 内部打开摄像头]`
->
-> 详见 `refMD/cleaned/Camera.md` §8
 
 ### 已知问题（展开状态下）
 
-本模块设计用于**已拆除内屏**的 MIX Flip。对于仍保留内屏的用户，展开时有两个问题：
-
-1. **双屏同时开启**：`DisplayStateHook` 强制 `DeviceStateToLayoutMap.get()` 返回 state=6 (DUAL)，使两块屏幕同时激活。内屏存在时也会保持亮屏，导致扩展桌面行为和额外耗电。
-
-2. **前置摄像头始终被重定向**：`CameraHook` 无条件将前置→后置。展开时前置摄像头（内屏摄像头）物理上可访问，但 hook 仍会拦截，用户无法自拍。
-
-如需在内屏完好时使用，可在 `Main.kt` 中注释对应 hook：
-- `DisplayStateHook` → 在 `DisplayStateHook.kt` 中注释 `hookDisplayLayoutGet` 调用
-- `CameraHook` → 在 hooks 列表中注释
+v2.8 起 `DisplayStateHook` 和 `CameraHook` 加入了折叠态守卫（`isOuterScreen()`: 屏幕高度 < 2000px）。展开时自动放行——原生显示拓扑和前置摄像头正常工作。无需手动配置。
 
 ### License
 
