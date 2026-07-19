@@ -176,43 +176,25 @@ object SystemUIHook : BaseHook() {
     // consume the event — let it fall through to the shortcut container below.
     // For swipe-up unlock, also set the result to false when mBarState is wrong.
     private fun hookLockScreenTouchFix(param: PackageReadyParam) {
-        // The tiny lock screen panel uses MiuiConfigs.getScreenSize() which reads
-        // windowConfiguration.getMaxBounds(). If this returns inner screen
-        // dimensions (2912px) instead of outer screen (1392px), all touch areas
-        // and layout positions are calculated for the wrong screen height.
+        // DeviceIdentityHook excludes SystemUI, so SystemUI still sees
+        // isFlipDevice=true and isFlipTinyScreen=true. This forces the tiny
+        // lock screen panel path which is designed for the original outer
+        // screen display topology (displayId=1, specific cutout, etc.).
+        // With state=6 (DUAL, outer=displayId=0), this path has:
+        //   - Wrong screen dimensions → shortcuts off-screen, swipe broken
+        //   - Wallpaper type 8 (flip outer) set on wrong display
         //
-        // Symptoms: shortcuts rendered at Y > 1392 (off-screen), swipe area
-        // unreachable, but pull-down works (top of screen is correct).
-        //
-        // Fix: hook getScreenSize to cap height at actual display height.
+        // Fix: force isFlipTinyScreen→false in SystemUI so it uses the
+        // normal lock screen path which works correctly with state=6.
         runCatching {
             val miuiConfigsClass = param.classLoader.loadClass(
                 "com.miui.utils.configs.MiuiConfigs")
-            val method = miuiConfigsClass.getDeclaredMethod("getScreenSize",
+            val method = miuiConfigsClass.getDeclaredMethod("isFlipTinyScreen",
                 android.content.Context::class.java)
             method.isAccessible = true
-            hook(method) { chain ->
-                val result = chain.proceed() as? android.graphics.Point ?: return@hook chain.proceed()
-                val ctx = chain.args[0] as? android.content.Context
-                if (ctx != null) {
-                    val dm = ctx.resources.displayMetrics
-                    val actualMax = Math.max(dm.widthPixels, dm.heightPixels)
-                    if (Math.max(result.x, result.y) > actualMax * 1.3) {
-                        // Screen size is significantly larger than actual display —
-                        // likely using inner screen metrics. Clamp to actual size.
-                        val oldMax = Math.max(result.x, result.y)
-                        if (result.y > result.x) {
-                            result.y = actualMax
-                        } else {
-                            result.x = actualMax
-                        }
-                        log("SystemUI/LockScreen: clamped getScreenSize $oldMax → $actualMax")
-                    }
-                }
-                result
-            }
-            log("SystemUI: hooked MiuiConfigs.getScreenSize")
-        }.onFailure { log("SystemUI: getScreenSize hook failed", it) }
+            hook(method, replaceResult(false))
+            log("SystemUI: forced MiuiConfigs.isFlipTinyScreen → false")
+        }.onFailure { log("SystemUI: isFlipTinyScreen hook failed", it) }
     }
 
 }
