@@ -5,7 +5,7 @@ import com.example.flipunlock.hook.util.log
 //import com.example.flipunlock.hook.LauncherDensityHook  // TODO: density tweak not working
 import com.example.flipunlock.hook.SogouInputHook
 import com.example.flipunlock.hook.AodHook
-import com.example.flipunlock.hook.CameraHook
+//import com.example.flipunlock.hook.CameraHook  // TODO: not working
 import com.example.flipunlock.hook.CutoutHook
 import com.example.flipunlock.hook.DeviceIdentityHook
 import com.example.flipunlock.hook.WatchOverlayHook
@@ -35,7 +35,7 @@ class Main : XposedModule() {
         ScreenTypeHook,  // Configuration.getScreenType → 0
         DeviceIdentityHook,  // IS_FLIP / isFlipDevice / isFoldDevice → false
         AodHook,  // v2.3: screen state fix + FlipLinkageStyleController
-        CameraHook,  // v2: dynamic LENS_FACING redirect
+//        CameraHook,  // TODO: front camera redirect not working — HAL reports all cameras as LENS_FACING_BACK
         CutoutHook,
         SystemUIHook,
         GestureHook,  // v2: block fliphome InputMonitor → system gestures
