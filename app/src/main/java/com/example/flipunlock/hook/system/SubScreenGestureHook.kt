@@ -64,8 +64,10 @@ object SubScreenGestureHook {
                 // Fix: redirect displayId 1→0 for registerPointerEventListener.
                 // When the gesture manager constructor calls registerPointerEventListener(this, 1),
                 // we change 1→0 so the gesture monitor listens on the outer screen.
+                val gestureListenerClass = param.classLoader.loadClass(
+                    "com.miui.server.input.gesture.MiuiGestureListener")
                 val regMethod = monitorCls.getDeclaredMethod("registerPointerEventListener",
-                    com.miui.server.input.gesture.MiuiGestureListener::class.java,
+                    gestureListenerClass,
                     Int::class.javaPrimitiveType!!)
                 regMethod.isAccessible = true
                 hook(regMethod) { chain ->
@@ -80,10 +82,12 @@ object SubScreenGestureHook {
                 // Fix: redirect displayId 1→0 for onFocusedWindowChanged.
                 // Original code: if (displayId != 1) return;
                 // With displayId=0 in state=6, this always bails out. We need to accept 0.
+                val windowStateClass = param.classLoader.loadClass(
+                    "com.android.server.policy.WindowManagerPolicy\$WindowState")
                 val focusMethod = cls.getDeclaredMethod("onFocusedWindowChanged",
                     Int::class.javaPrimitiveType!!,
-                    com.android.server.policy.WindowManagerPolicy.WindowState::class.java,
-                    com.android.server.policy.WindowManagerPolicy.WindowState::class.java)
+                    windowStateClass,
+                    windowStateClass)
                 focusMethod.isAccessible = true
                 hook(focusMethod) { chain ->
                     val displayId = chain.args[0] as? Int ?: return@hook chain.proceed()
