@@ -45,11 +45,26 @@ object WatchOverlayHook : BaseHook() {
     }
 
     // ========== 2. View layer: WatchOverlayGroupView fully disabled ==========
+    // The WatchOverlayGroupView class is in an obfuscated sub-package that
+    // differs between HyperOS versions:
+    //   HyperOS 1 (Android 14): com.miui.fliphome.widget.p006ui.WatchOverlayGroupView
+    //   HyperOS 2/3 (Android 15):com.miui.fliphome.widget.p014ui.WatchOverlayGroupView
+    // Try each known variant; the first match wins.
+    private fun findWatchOverlayGroupViewClass(cl: ClassLoader): Class<*> {
+        val variants = listOf(
+            "com.miui.fliphome.widget.p006ui.WatchOverlayGroupView",  // HyperOS 1
+            "com.miui.fliphome.widget.p014ui.WatchOverlayGroupView",  // HyperOS 2/3
+            "com.miui.fliphome.widget.ui.WatchOverlayGroupView",      // fallback
+        )
+        for (name in variants) {
+            runCatching { return cl.loadClass(name) }
+        }
+        throw ClassNotFoundException("WatchOverlayGroupView not found in any known package")
+    }
+
     private fun hookWatchOverlayGroupView(param: PackageReadyParam) {
         runCatching {
-            val clazz = param.classLoader.loadClass(
-                "com.miui.fliphome.widget.ui.WatchOverlayGroupView"
-            )
+            val clazz = findWatchOverlayGroupViewClass(param.classLoader)
 
             // 2.1 Constructor
             val constructor = clazz.declaredConstructors.firstOrNull()
