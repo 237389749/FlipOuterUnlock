@@ -49,6 +49,9 @@ object DeviceIdentityHook : BaseHook() {
         clearStaticFinalField(param, "miui.util.MiuiConfigs", "IS_NOTCH", false)
         clearStaticFinalField(param, "miui.util.MiuiConfigs", "IS_PAD", false)
         clearStaticFinalField(param, "miuix.os.Build", "IS_FOLDABLE", false)
+        // DeviceFeature.IS_FOLD_DEVICE is set at class init from isFoldDevice().
+        // May have been loaded before our hook fires — clear it here for consistency.
+        clearStaticFinalField(param, "miui.os.DeviceFeature", "IS_FOLD_DEVICE", false)
     }
 
     private fun clearStaticFinalField(param: PackageReadyParam, className: String, fieldName: String, value: Boolean) {

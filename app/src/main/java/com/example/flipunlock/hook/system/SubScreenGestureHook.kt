@@ -6,19 +6,23 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 /**
  * Enable MiuiSubScreenMultiFingerGestureManager for Mix Flip (type 4).
  *
- * From point.txt and ref docs (Gesture_Widget_Overlay.md section 11):
- * - This gesture manager provides system-level multi-finger gestures on sub-screens
- * - It targets displayId=1 (matches Mix Flip's external screen!)
- * - But init() guards on isIndependentRearDevice() == true (type 6 only)
- * - Mix Flip is type 4 (flip), so it never initializes
+ * This gesture manager provides:
+ *   - MiuiSubscreenDoubleTapGesture (double-tap outer screen → sleep)
+ *   - MiuiSubscreenThreeFingerDownGesture (3-finger swipe down → screenshot)
  *
- * We hook init() to bypass the device type guard and force initialization.
- * The isIndependentRearDevice hook is intentionally NOT used here because
- * it would have system-wide side effects.
+ * Two problems need fixing:
+ *   1. init() guards on isIndependentRearDevice() == true (type 6 only).
+ *      Mix Flip is type 4 (flip), so it never initializes.
+ *      Fix: hook init() to bypass device type guard, create instance directly.
  *
- * Gestures supported:
- * - MiuiSubscreenDoubleTapGesture (double-tap the external screen)
- * - MiuiSubscreenThreeFingerDownGesture (three-finger swipe down)
+ *   2. The class hardcodes NEED_DISPLAY_ID = 1 everywhere:
+ *        registerPointerEventListener(this, 1)
+ *        onFocusedWindowChanged: if (displayId != 1) return
+ *        pilferPointers(1)
+ *        goToSleep(1, ...)
+ *      With DisplayStateHook state=6 (DUAL), outer screen IS displayId=0.
+ *      So the gesture monitor listens on the wrong display and never fires.
+ *      Fix: hook registerPointerEventListener + onFocusedWindowChanged to use displayId=0.
  */
 object SubScreenGestureHook {
 
@@ -28,42 +32,69 @@ object SubScreenGestureHook {
                 val cls = param.classLoader.loadClass(
                     "com.miui.server.input.gesture.multifingergesture.MiuiSubScreenMultiFingerGestureManager"
                 )
+                val monitorCls = param.classLoader.loadClass(
+                    "com.miui.server.input.gesture.MiuiGestureMonitor"
+                )
 
-                // Hook init(Context). Original code:
-                //   if (isIndependentRearDevice() && sInstance == null) {
-                //       sInstance = new MiuiSubScreenMultiFingerGestureManager(ctx);
-                //   }
-                // We hook init BEFORE it runs, create the instance ourselves
-                // via reflection, and set sInstance. Then the original init()
-                // will see sInstance != null and skip.
+                // Hook init(Context) — bypass isIndependentRearDevice() guard.
                 val initMethod = cls.method("init", android.content.Context::class.java)
                 hook(initMethod) { chain ->
                     val existing = runCatching {
                         cls.callMethod("getInstance")
                     }.getOrNull()
                     if (existing != null) {
-                        // Already initialized, let original run (it will skip)
                         chain.proceed()
                     } else {
                         val context = chain.args[0] as? android.content.Context
                         if (context != null) {
-                            // Find constructor: MiuiSubScreenMultiFingerGestureManager(Context)
                             val constructor = cls.declaredConstructors.firstOrNull {
                                 it.parameterCount == 1
                             }
                             if (constructor != null) {
                                 constructor.isAccessible = true
                                 val instance = constructor.newInstance(context)
-                                // Set static sInstance field
                                 cls.field("sInstance").set(null, instance)
                                 log("SubScreenGesture: initialized for Mix Flip external display!")
                             }
                         }
-                        // Let original init run (will see sInstance != null and no-op)
                         chain.proceed()
                     }
                 }
-                log("SubScreenGesture: hooked MiuiSubScreenMultiFingerGestureManager.init()")
+
+                // Fix: redirect displayId 1→0 for registerPointerEventListener.
+                // When the gesture manager constructor calls registerPointerEventListener(this, 1),
+                // we change 1→0 so the gesture monitor listens on the outer screen.
+                val regMethod = monitorCls.getDeclaredMethod("registerPointerEventListener",
+                    com.miui.server.input.gesture.MiuiGestureListener::class.java,
+                    Int::class.javaPrimitiveType!!)
+                regMethod.isAccessible = true
+                hook(regMethod) { chain ->
+                    val displayId = chain.args[1] as? Int ?: return@hook chain.proceed()
+                    if (displayId == 1) {
+                        log("SubScreenGesture: redirect registerPointerEventListener displayId 1→0")
+                        chain.args[1] = 0
+                    }
+                    chain.proceed()
+                }
+
+                // Fix: redirect displayId 1→0 for onFocusedWindowChanged.
+                // Original code: if (displayId != 1) return;
+                // With displayId=0 in state=6, this always bails out. We need to accept 0.
+                val focusMethod = cls.getDeclaredMethod("onFocusedWindowChanged",
+                    Int::class.javaPrimitiveType!!,
+                    com.android.server.policy.WindowManagerPolicy.WindowState::class.java,
+                    com.android.server.policy.WindowManagerPolicy.WindowState::class.java)
+                focusMethod.isAccessible = true
+                hook(focusMethod) { chain ->
+                    val displayId = chain.args[0] as? Int ?: return@hook chain.proceed()
+                    if (displayId == 0) {
+                        chain.args[0] = 1  // Pretend it's displayId=1 so the guard passes
+                        log("SubScreenGesture: redirect onFocusedWindowChanged displayId 0→1")
+                    }
+                    chain.proceed()
+                }
+
+                log("SubScreenGesture: hooked with displayId fix")
             }.onFailure { log("SubScreenGesture: failed", it) }
         }
     }
