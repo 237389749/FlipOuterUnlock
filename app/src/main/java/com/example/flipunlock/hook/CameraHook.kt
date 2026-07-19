@@ -38,6 +38,17 @@ object CameraHook : BaseHook() {
     /** Ensures we only enumerate cameras once. */
     private var enumerated = false
 
+    /**
+     * Detect whether we're on the outer (folded) screen by checking display height.
+     * Outer screen: ~1392px max. Inner screen: ~2912px max. Threshold: 2000px.
+     * Only redirect front camera when on the outer screen — on inner screen
+     * (unfolded), the front camera is physically accessible and should work normally.
+     */
+    private fun isOuterScreen(): Boolean {
+        val dm = android.content.res.Resources.getSystem().displayMetrics
+        return Math.max(dm.widthPixels, dm.heightPixels) < 2000
+    }
+
     override fun setupHooks(param: PackageReadyParam) {
         log("CameraHook: loading for ${param.packageName}")
         runCatching {
@@ -49,6 +60,8 @@ object CameraHook : BaseHook() {
                 Handler::class.java
             )
             hook(openMethod, before { chain ->
+                // Only redirect on outer screen; let front camera work normally when unfolded
+                if (!isOuterScreen()) return@before
                 ensureEnumerated(chain.thisObject as? CameraManager)
                 val cameraId = chain.args[0] as? String ?: return@before
                 if (cameraId in frontCameraIds) {

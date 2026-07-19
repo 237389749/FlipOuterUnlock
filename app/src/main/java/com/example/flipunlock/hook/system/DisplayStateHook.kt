@@ -21,6 +21,17 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
  */
 object DisplayStateHook {
 
+    /**
+     * Detect whether we're on the outer (folded) screen by checking display height.
+     * Outer screen: ~1392px max. Inner screen: ~2912px max. Threshold: 2000px.
+     * Only apply display state forcing when on the outer screen — when unfolded
+     * with the inner screen intact, the native display topology works correctly.
+     */
+    private fun isOuterScreen(): Boolean {
+        val dm = android.content.res.Resources.getSystem().displayMetrics
+        return Math.max(dm.widthPixels, dm.heightPixels) < 2000
+    }
+
     fun hook(param: SystemServerStartingParam) {
         log("DisplayStateHook: setting up")
         safeHook("DisplayStateHook") {
@@ -54,7 +65,9 @@ object DisplayStateHook {
             val closedState = closedStateConstructor.newInstance(0)
 
             hook(method) { chain ->
-                chain.args[0] = closedState
+                if (isOuterScreen()) {
+                    chain.args[0] = closedState
+                }
                 chain.proceed()
             }
             log("DisplayState: forced LogicalDisplayMapper -> always CLOSED (outer screen)")
@@ -73,6 +86,7 @@ object DisplayStateHook {
             method.isAccessible = true
 
             hook(method) { chain ->
+                if (!isOuterScreen()) return@hook chain.proceed()
                 val state = chain.args[0] as? Int ?: return@hook chain.proceed()
                 val layoutMap = chain.thisObject.getField("mLayoutMap")
                 val dualLayout = (layoutMap as android.util.SparseArray<*>).get(6)
@@ -81,7 +95,7 @@ object DisplayStateHook {
                 }
                 dualLayout ?: chain.proceed()
             }
-            log("DisplayState: ✓ DeviceStateToLayoutMap.get hooked → always state=6 (DUAL)")
+            log("DisplayState: ✓ DeviceStateToLayoutMap.get hooked → state=6 when folded")
         }.onFailure { log("DisplayState: failed hook DeviceStateToLayoutMap.get", it) }
     }
 
@@ -97,10 +111,12 @@ object DisplayStateHook {
                 "onDeviceStateChanged", Boolean::class.javaPrimitiveType!!
             )
             hook(method) { chain ->
-                chain.args[0] = false
+                if (isOuterScreen()) {
+                    chain.args[0] = false  // force unfolded
+                }
                 chain.proceed()
             }
-            log("DisplayState: forced ContinuityPolicyService.onDeviceStateChanged -> unfolded")
+            log("DisplayState: forced ContinuityPolicyService.onDeviceStateChanged -> unfolded when folded")
         }.onFailure { log("DisplayState: failed hook ContinuityPolicyService", it) }
     }
 
@@ -120,10 +136,12 @@ object DisplayStateHook {
                 Int::class.javaPrimitiveType!!
             )
             hook(method) { chain ->
-                chain.args[0] = 0  // force deviceState=0 (CLOSED)
+                if (isOuterScreen()) {
+                    chain.args[0] = 0  // force deviceState=0 (CLOSED)
+                }
                 chain.proceed()
             }
-            log("DisplayState: forced getDisplayInfoForStateLocked -> always state=0")
+            log("DisplayState: forced getDisplayInfoForStateLocked -> state=0 when folded")
         }.onFailure { log("DisplayState: failed hook getDisplayInfoForStateLocked", it) }
     }
 
