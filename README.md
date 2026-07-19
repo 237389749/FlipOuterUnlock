@@ -123,7 +123,7 @@ For CI, add GitHub Secrets: `KEYSTORE` (base64), `KEYSTORE_PASSWORD`, `ALIAS`, `
 
 ### TODO
 
-- **CameraHook** — Front camera redirect on outer screen (not yet verified working — needs real device test)
+- **CameraHook** — Front camera redirect on outer screen (not working — HAL reports all cameras as LENS_FACING_BACK, fallback "1"→"0" not yet verified)
 - **FaceUnlock** — Face unlock on outer screen (confirmed infeasible — see below)
 
 ### Known Issues (Unfolded State)
@@ -205,7 +205,7 @@ CI: GitHub Secrets → `KEYSTORE`(base64), `KEYSTORE_PASSWORD`, `ALIAS`, `KEY_PA
 
 ### 未完成
 
-- **CameraHook** — 外屏前置摄像头重定向（尚未在真机验证是否生效）
+- **CameraHook** — 外屏前置摄像头重定向（不生效 — HAL 上报所有摄像头均为 LENS_FACING_BACK，回退方案 "1"→"0" 未验证）
 - **FaceUnlock** — 外屏人脸解锁（已确认不可行 — 详见下）
 
 ### 已知问题（展开状态下）
