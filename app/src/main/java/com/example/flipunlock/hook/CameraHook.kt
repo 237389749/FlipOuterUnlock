@@ -46,36 +46,38 @@ object CameraHook : BaseHook() {
      */
     private fun isOuterScreen(): Boolean {
         val dm = android.content.res.Resources.getSystem().displayMetrics
-        return Math.max(dm.widthPixels, dm.heightPixels) < 2000
+        val maxPx = Math.max(dm.widthPixels, dm.heightPixels)
+        log("CameraHook: isOuterScreen? maxPx=$maxPx density=${dm.densityDpi} → ${maxPx < 2000}")
+        return maxPx < 2000
     }
 
     override fun setupHooks(param: PackageReadyParam) {
         log("CameraHook: loading for ${param.packageName}")
         runCatching {
             val cmClass = CameraManager::class.java
-            val openMethod = cmClass.getDeclaredMethod(
-                "openCamera",
-                String::class.java,
-                CameraDevice.StateCallback::class.java,
-                Handler::class.java
-            )
-            hook(openMethod, before { chain ->
-                // Only redirect on outer screen; let front camera work normally when unfolded
-                if (!isOuterScreen()) return@before
-                ensureEnumerated(chain.thisObject as? CameraManager)
-                val cameraId = chain.args[0] as? String ?: return@before
-                if (cameraId in frontCameraIds) {
-                    val target = redirectTarget
-                    if (target != null && target != cameraId) {
-                        chain.args[0] = target
-                        log("CameraHook: redirect front camera $cameraId → $target")
-                    } else {
-                        log("CameraHook: front camera $cameraId requested but no back camera available — passing through")
-                    }
-                }
-            })
-            log("CameraHook: hooked CameraManager.openCamera()")
-        }.onFailure { log("CameraHook: CameraManager.openCamera failed", it) }
+            // Hook both openCamera overloads: Handler-based and Executor-based
+            for (signature in listOf(
+                arrayOf(String::class.java, CameraDevice.StateCallback::class.java, Handler::class.java),
+                arrayOf(String::class.java, java.util.concurrent.Executor::class.java, CameraDevice.StateCallback::class.java)
+            )) {
+                runCatching {
+                    val openMethod = cmClass.getDeclaredMethod("openCamera", *signature)
+                    hook(openMethod, before { chain ->
+                        if (!isOuterScreen()) return@before
+                        ensureEnumerated(chain.thisObject as? CameraManager)
+                        val cameraId = chain.args[0] as? String ?: return@before
+                        if (cameraId in frontCameraIds) {
+                            val target = redirectTarget
+                            if (target != null && target != cameraId) {
+                                chain.args[0] = target
+                                log("CameraHook: redirect front camera $cameraId → $target")
+                            }
+                        }
+                    })
+                    log("CameraHook: hooked openCamera(${signature.joinToString { it.simpleName }})")
+                }.onFailure { log("CameraHook: openCamera variant not found: ${it.message}") }
+            }
+        }.onFailure { log("CameraHook: setup failed", it) }
     }
 
     /**
@@ -117,6 +119,22 @@ object CameraHook : BaseHook() {
                 }
 
                 log("CameraHook: enumeration done — frontIds=$frontCameraIds, target=$redirectTarget")
+
+                // Fallback: on Mix Flip, ALL cameras report LENS_FACING_BACK (the
+                // inner-screen selfie camera is physically a back camera with mirror
+                // optics). The camera app hardcodes cameraId "1" as front (FUAbstractCamera
+                // defaults mFrontCameraId=1). If no LENS_FACING_FRONT was found, redirect
+                // cameraId "1" → "0" (or the lowest available non-1 back camera).
+                if (frontCameraIds.isEmpty() && redirectTarget != null) {
+                    // Try "1" first (FUAbstractCamera default), then any non-redirectTarget
+                    val fallbackFront = ids.firstOrNull {
+                        it == "1" && it != redirectTarget
+                    } ?: ids.firstOrNull { it != redirectTarget }
+                    if (fallbackFront != null) {
+                        frontCameraIds.add(fallbackFront)
+                        log("CameraHook: fallback — redirect $fallbackFront → $redirectTarget (no LENS_FACING_FRONT cameras found)")
+                    }
+                }
             }.onFailure {
                 log("CameraHook: enumeration failed", it)
             }
