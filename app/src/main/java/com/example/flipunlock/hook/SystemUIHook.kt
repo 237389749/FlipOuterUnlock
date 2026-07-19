@@ -176,30 +176,43 @@ object SystemUIHook : BaseHook() {
     // consume the event — let it fall through to the shortcut container below.
     // For swipe-up unlock, also set the result to false when mBarState is wrong.
     private fun hookLockScreenTouchFix(param: PackageReadyParam) {
-        // The tiny lock screen panel (TinyKeyguardPanelView) is a full-screen
-        // FrameLayout that overlays the shortcut container. Its TouchHandler
-        // intercepts and consumes ALL touches, blocking shortcut clicks and
-        // sometimes preventing swipe-up unlock (state-dependent).
+        // The tiny lock screen panel uses MiuiConfigs.getScreenSize() which reads
+        // windowConfiguration.getMaxBounds(). If this returns inner screen
+        // dimensions (2912px) instead of outer screen (1392px), all touch areas
+        // and layout positions are calculated for the wrong screen height.
         //
-        // Fix: hook ViewGroup.onInterceptTouchEvent, filter for the panel by
-        // class name, and return false so touches pass through to the shortcut
-        // container underneath. The panel stays visible but doesn't steal touches.
+        // Symptoms: shortcuts rendered at Y > 1392 (off-screen), swipe area
+        // unreachable, but pull-down works (top of screen is correct).
+        //
+        // Fix: hook getScreenSize to cap height at actual display height.
         runCatching {
-            val interceptMethod = android.view.ViewGroup::class.java
-                .getDeclaredMethod("onInterceptTouchEvent", android.view.MotionEvent::class.java)
-            interceptMethod.isAccessible = true
-            hook(interceptMethod) { chain ->
-                val view = chain.thisObject
-                val name = view?.javaClass?.name ?: ""
-                if (name.contains("TinyKeyguardPanelView")) {
-                    // Let touches pass through to the shortcut container below
-                    log("SystemUI/LockScreen: bypass TinyKeyguardPanelView.onInterceptTouchEvent")
-                    return@hook false
+            val miuiConfigsClass = param.classLoader.loadClass(
+                "com.miui.utils.configs.MiuiConfigs")
+            val method = miuiConfigsClass.getDeclaredMethod("getScreenSize",
+                android.content.Context::class.java)
+            method.isAccessible = true
+            hook(method) { chain ->
+                val result = chain.proceed() as? android.graphics.Point ?: return@hook chain.proceed()
+                val ctx = chain.args[0] as? android.content.Context
+                if (ctx != null) {
+                    val dm = ctx.resources.displayMetrics
+                    val actualMax = Math.max(dm.widthPixels, dm.heightPixels)
+                    if (Math.max(result.x, result.y) > actualMax * 1.3) {
+                        // Screen size is significantly larger than actual display —
+                        // likely using inner screen metrics. Clamp to actual size.
+                        val oldMax = Math.max(result.x, result.y)
+                        if (result.y > result.x) {
+                            result.y = actualMax
+                        } else {
+                            result.x = actualMax
+                        }
+                        log("SystemUI/LockScreen: clamped getScreenSize $oldMax → $actualMax")
+                    }
                 }
-                chain.proceed()
+                result
             }
-            log("SystemUI: hooked ViewGroup.onInterceptTouchEvent → TinyKeyguardPanelView filter")
-        }.onFailure { log("SystemUI: onInterceptTouchEvent hook failed", it) }
+            log("SystemUI: hooked MiuiConfigs.getScreenSize")
+        }.onFailure { log("SystemUI: getScreenSize hook failed", it) }
     }
 
 }
