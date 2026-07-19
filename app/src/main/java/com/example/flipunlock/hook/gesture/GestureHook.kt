@@ -11,18 +11,28 @@ import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
- * Hook fliphome to:
- * 1. Disable FlipLauncher → inner launcher takes over outer screen
- * 2. Force-initialize the gesture engine for folded (outer screen) state
+ * Block fliphome gesture engine so system NavigationBar gestures work on the outer screen.
  *
- * Key insight: BaseGestureImpl.init() registers the InputMonitor, but
- * registerInputConsumer() and addBackStubWindow() are only called from
- * onDisplayFoldChanged(true), which may never fire if FlipLauncher is
- * disabled (the fold event observer is tied to Activity lifecycle).
+ * Two mutually exclusive gesture systems exist:
+ *   - fliphome (BaseGestureImpl / GestureInputHelper): intercepts ALL touches via InputMonitor
+ *     for fliphome's custom gesture navigation on the outer screen
+ *   - SystemUI NavigationBar: standard Android gesture navigation (Back, Home, Recents)
  *
- * We bypass the event-driven model entirely: after init(), we directly
- * set mIsFolded=true, registerInputConsumer(), addBackStubWindow(),
- * and force enableGestureInput.
+ * With state=6 (DUAL, outer leads, displayId=0), the inner screen launcher runs on the outer
+ * screen. System gestures should be provided by SystemUI's NavigationBar, NOT fliphome.
+ *
+ * fliphome's InputMonitor (created via InputManager.monitorGestureInput()) intercepts all
+ * touch events before any app window receives them. We block its creation so touches reach
+ * SystemUI NavigationBar normally.
+ *
+ * Strategy:
+ *   1. Block GestureInputHelper.initInputMonitor() → prevents InputMonitor creation
+ *   2. Block GestureInputHelper.registerInputConsumer() → prevents InputConsumer registration
+ *   3. Disable FlipLauncher component (keeps fliphome process alive but hides its UI)
+ *   4. Block interstitial start pages (ported from MixFlipMod)
+ *
+ * The fliphome process stays alive (we don't kill TouchInteractionService) but its gesture
+ * engine can't intercept touches without an InputMonitor.
  */
 object GestureHook : BaseHook() {
     override val targetPackages = listOf("com.miui.fliphome")
@@ -32,12 +42,10 @@ object GestureHook : BaseHook() {
     override fun setupHooks(param: PackageReadyParam) {
         hookNoStartPage(param)
         disableFlipLauncher(param)
-        keepTouchInteractionServiceAlive(param)
-        forceInitGestureInFoldedState(param)
-        forceGestureEnabled(param)
+        blockGestureInputMonitor(param)
     }
 
-    // ── 0. No start page (ported from MixFlipMod FlipHomeHook) ───────────
+    // ── 1. No start page (ported from MixFlipMod FlipHomeHook) ───────────
     // Some apps (MiHome, Weibo, NetEaseMusic) show an interstitial start
     // page when launched on the outer screen. This hook disables that.
     private fun hookNoStartPage(param: PackageReadyParam) {
@@ -50,7 +58,9 @@ object GestureHook : BaseHook() {
         }.onFailure { log("GestureFix: PerformLaunchAction not found (harmless)", it) }
     }
 
-    // ── 1. Disable FlipLauncher via PackageManager ────────────────────────
+    // ── 2. Disable FlipLauncher via PackageManager ────────────────────────
+    // Disables the fliphome-specific launcher UI component.
+    // With state=6, the inner launcher handles the desktop; FlipLauncher is not needed.
     private fun disableFlipLauncher(param: PackageReadyParam) {
         if (launcherDisabled) return
         runCatching {
@@ -74,7 +84,7 @@ object GestureHook : BaseHook() {
                             PackageManager.DONT_KILL_APP
                         )
                         launcherDisabled = true
-                        log("GestureFix: disabled FlipLauncher, keeping process alive")
+                        log("GestureFix: disabled FlipLauncher component")
                     }
                 }.onFailure { log("GestureFix: failed to disable FlipLauncher", it) }
                 result
@@ -83,109 +93,47 @@ object GestureHook : BaseHook() {
         }.onFailure { log("GestureFix: failed hook FlipApplication", it) }
     }
 
-    // ── 2. Keep TouchInteractionService alive ───────────────────────────
-    private fun keepTouchInteractionServiceAlive(param: PackageReadyParam) {
+    // ── 3. Block fliphome gesture InputMonitor ───────────────────────────
+    //
+    // Fliphome's gesture engine creates an InputMonitor via:
+    //   GestureInputHelper.initInputMonitor(name, displayId, context)
+    //     → new InputMonitorCompat(name, displayId)
+    //       → InputManager.monitorGestureInput(name, displayId)
+    //         ← THIS intercepts ALL touch events before any app receives them
+    //
+    // By blocking initInputMonitor(), the InputMonitor is never created.
+    // Touches flow through to SystemUI's NavigationBar normally.
+    //
+    // We also block registerInputConsumer() for defense-in-depth.
+    private fun blockGestureInputMonitor(param: PackageReadyParam) {
+        // 3a. Block InputMonitor creation
         runCatching {
-            val serviceClass = param.classLoader.loadClass(
-                "com.miui.fliphome.gesture.service.TouchInteractionService"
+            val helperClass = param.classLoader.loadClass(
+                "com.miui.fliphome.gesture.GestureInputHelper"
             )
-            val onDestroyMethod = serviceClass.method("onDestroy")
-            hook(onDestroyMethod, replaceResult(null))
-            log("GestureFix: blocked TouchInteractionService.onDestroy")
-        }.onFailure { log("GestureFix: failed hook TouchInteractionService", it) }
-    }
+            val initMethod = helperClass.getDeclaredMethod("initInputMonitor",
+                String::class.java, Int::class.javaPrimitiveType!!,
+                android.content.Context::class.java)
+            initMethod.isAccessible = true
+            hook(initMethod) { chain ->
+                log("GestureFix: BLOCKED GestureInputHelper.initInputMonitor")
+                // Don't call chain.proceed() — InputMonitor is never created
+            }
+            log("GestureFix: blocked GestureInputHelper.initInputMonitor")
+        }.onFailure { log("GestureFix: GestureInputHelper.initInputMonitor failed", it) }
 
-    // ── 3. Force-initialize gesture for folded state ─────────────────────
-    // After BaseGestureImpl.init() completes, directly activate folded mode:
-    //   set mIsFolded = true
-    //   registerInputConsumer()  ← activates InputMonitor for swipe-up
-    //   addBackStubWindow()      ← creates edge stub views for back gesture
-    // This bypasses the onDisplayFoldChanged callback which may not fire
-    // when FlipLauncher is disabled.
-    private fun forceInitGestureInFoldedState(param: PackageReadyParam) {
+        // 3b. Block InputConsumer registration (defense-in-depth)
         runCatching {
-            val baseGestureImplClass = param.classLoader.loadClass(
-                "com.miui.fliphome.gesture.BaseGestureImpl"
+            val helperClass = param.classLoader.loadClass(
+                "com.miui.fliphome.gesture.GestureInputHelper"
             )
-            val initMethod = baseGestureImplClass.method("init")
-            hook(initMethod, after { chain, result ->
-                val impl = chain.thisObject
-                // 1. Set mIsFolded = true (bypass fold state observer)
-                impl.setField("mIsFolded", true)
-                log("GestureFix: set mIsFolded=true")
-
-                // 2. Register InputConsumer (activates swipe-up gesture monitor)
-                val helper = impl.getField("mGestureInputHelper")
-                if (helper != null) {
-                    val isRegistered = helper.callMethod("hasRegisterInputConsumer") as? Boolean
-                    if (isRegistered != true) {
-                        helper.callMethod("registerInputConsumer")
-                        log("GestureFix: force-registered InputConsumer after init")
-                    }
-                    helper.callMethod("setEnable", true)
-                    log("GestureFix: force-enabled gesture input after init")
-                }
-
-                // 3. Add back stub windows (edge swipe visual indicators)
-                // Deferred to background executor like the original does
-                impl.callMethod("addBackStubWindow")
-                log("GestureFix: triggered addBackStubWindow")
-
-                result
-            })
-            log("GestureFix: hooked BaseGestureImpl.init for folded-state init")
-        }.onFailure { log("GestureFix: failed hook BaseGestureImpl.init", it) }
-    }
-
-    // ── 4. Force gesture input always enabled ────────────────────────────
-    // Also hook onDisplayFoldChanged to ensure everything stays active.
-    private fun forceGestureEnabled(param: PackageReadyParam) {
-        runCatching {
-            val baseGestureImplClass = param.classLoader.loadClass(
-                "com.miui.fliphome.gesture.BaseGestureImpl"
-            )
-
-            // Force enableGestureInput → always setEnable(true)
-            runCatching {
-                val enableMethod = baseGestureImplClass.method("enableGestureInput")
-                hook(enableMethod, after { chain, result ->
-                    val helper = chain.thisObject.getField("mGestureInputHelper")
-                    if (helper != null) {
-                        helper.callMethod("setEnable", true)
-                    }
-                    result
-                })
-                log("GestureFix: force-enabled BaseGestureImpl.enableGestureInput")
+            val registerMethod = helperClass.getDeclaredMethod("registerInputConsumer")
+            registerMethod.isAccessible = true
+            hook(registerMethod) { chain ->
+                log("GestureFix: BLOCKED GestureInputHelper.registerInputConsumer")
+                // Don't call chain.proceed() — InputConsumer is never registered
             }
-
-            // Block disableGestureInput
-            runCatching {
-                val disableMethod = baseGestureImplClass.method("disableGestureInput")
-                hook(disableMethod, replaceResult(null))
-                log("GestureFix: blocked BaseGestureImpl.disableGestureInput")
-            }
-
-            // Reinforce on fold change
-            runCatching {
-                val onFoldChanged = baseGestureImplClass.method(
-                    "onDisplayFoldChanged", Boolean::class.javaPrimitiveType!!
-                )
-                hook(onFoldChanged, after { chain, result ->
-                    val isFolded = chain.args[0] as? Boolean ?: false
-                    if (isFolded) {
-                        val helper = chain.thisObject.getField("mGestureInputHelper")
-                        if (helper != null) {
-                            val isRegistered = helper.callMethod("hasRegisterInputConsumer") as? Boolean
-                            if (isRegistered != true) {
-                                helper.callMethod("registerInputConsumer")
-                                log("GestureFix: re-registered InputConsumer on fold")
-                            }
-                        }
-                    }
-                    result
-                })
-                log("GestureFix: hooked BaseGestureImpl.onDisplayFoldChanged")
-            }
-        }.onFailure { log("GestureFix: failed hook BaseGestureImpl", it) }
+            log("GestureFix: blocked GestureInputHelper.registerInputConsumer")
+        }.onFailure { log("GestureFix: GestureInputHelper.registerInputConsumer failed", it) }
     }
 }

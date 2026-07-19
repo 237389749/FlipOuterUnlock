@@ -31,14 +31,14 @@ internal var module: Main? = null
 class Main : XposedModule() {
 
     private val hooks = listOf(
-        ScreenTypeHook,  // 重新启用：Configuration.getScreenType → 0
-        DeviceIdentityHook,  // ← IS_FLIP 已注释排查中
-        AodHook,
-        CameraHook,
+        ScreenTypeHook,  // Configuration.getScreenType → 0
+        DeviceIdentityHook,  // IS_FLIP / isFlipDevice / isFoldDevice → false
+        AodHook,  // v2.3: screen state fix + FlipLinkageStyleController
+        CameraHook,  // v2: dynamic LENS_FACING redirect
         CutoutHook,
         SystemUIHook,
-        GestureHook,
-//        LauncherDensityHook,  // TODO: density tweak not working
+        GestureHook,  // v2: block fliphome InputMonitor → system gestures
+//        LauncherDensityHook,  // Not needed: state=6 already adapts launcher to outer screen
         SogouInputHook,
         ActivityLifecycleHook,
         WatchOverlayHook,

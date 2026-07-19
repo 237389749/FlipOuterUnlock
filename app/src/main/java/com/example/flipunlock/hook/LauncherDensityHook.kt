@@ -9,11 +9,13 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  * on the outer screen, so the launcher renders its full grid layout instead
  * of the compact one.
  *
+ * NOTE (2026-07-19): No longer needed. With DisplayStateHook returning state=6
+ * (DUAL, outer leads), the inner launcher automatically adapts to the outer
+ * screen resolution (1208×1392). Density tweak kept for reference but disabled.
+ *
  * Outer screen: 1208x1392 @ 520dpi → ~371dp × ~428dp
  * With density lowered to 320dpi: ~604dp — crosses the 600dp threshold
  * that triggers the full (non-tiny) launcher grid.
- *
- * Only modifies Resources directly — no Dependency on DensityUtil pipeline.
  */
 object LauncherDensityHook : BaseHook() {
     override val targetPackages = listOf("com.miui.home")

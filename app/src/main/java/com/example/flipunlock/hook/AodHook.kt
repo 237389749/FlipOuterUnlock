@@ -33,17 +33,29 @@ object AodHook : BaseHook() {
     // ── Layer 1: Framework DreamService hooks ────────────────────────────
 
     private fun hookFrameworkDreamService(cl: ClassLoader, pkg: String) {
-        // 1a. setDozeScreenState(int) — block OFF/SUSPEND, force DOZE(2)
+        // 1a. setDozeScreenState(int) — block screen-OFF states, force AOD ON (4)
+        //
+        // DozeMachine.State.screenState() values:
+        //   0 = FINISH/COVERMODE (OFF)
+        //   1 = DOZE/DOZE_AOD_PAUSED (OFF)
+        //   2 = DOZE_PULSING (ON — bright, for notifications)
+        //   3 = DOZE_AOD_PAUSING (video screen variant)
+        //   4 = DOZE_AOD (AOD display ON ★ — this is what we want)
+        //
+        // We redirect OFF→ON but let ON states (2,4) pass unchanged.
         runCatching {
             val method = android.service.dreams.DreamService::class.java
                 .getDeclaredMethod("setDozeScreenState", Int::class.javaPrimitiveType!!)
             method.isAccessible = true
             hook(method) { chain ->
                 val state = chain.args[0] as? Int ?: return@hook chain.proceed()
-                log("AodHook/L1: setDozeScreenState($state)")
-                if (state == 1 || state == 4) {
-                    log("AodHook/L1: BLOCKED $state → 2")
-                    chain.args[0] = 2
+                when (state) {
+                    0, 1, 3 -> {
+                        // Screen-requesting OFF → force AOD ON
+                        log("AodHook/L1: BLOCKED setDozeScreenState($state) → 4 (AOD ON)")
+                        chain.args[0] = 4
+                    }
+                    // 2 (PULSING/ON) and 4 (AOD ON) pass through
                 }
                 chain.proceed()
             }
@@ -119,10 +131,11 @@ object AodHook : BaseHook() {
                     method.isAccessible = true
                     hook(method) { chain ->
                         val s = chain.args[0] as? Int ?: return@hook chain.proceed()
-                        log("AodHook/L2: DozeService.setDozeScreenState($s)")
-                        if (s == 1 || s == 4) {
-                            log("AodHook/L2: BLOCKED $s → 2")
-                            chain.args[0] = 2
+                        when (s) {
+                            0, 1, 3 -> {
+                                log("AodHook/L2: BLOCKED DozeService.setDozeScreenState($s) → 4 (AOD ON)")
+                                chain.args[0] = 4
+                            }
                         }
                         chain.proceed()
                     }
@@ -140,6 +153,40 @@ object AodHook : BaseHook() {
                     log("AodHook: ✓ L2 DozeHost.isFullAod → false (runtime)")
                 }.onFailure { log("AodHook: L2 DozeHost.isFullAod failed", it) }
             }
+
+            // Hook FlipLinkageStyleController to prevent AOD kill switch.
+            //
+            // DozeMachine.resolveIntermediateState() (lines 396-401):
+            //   if (flip.isUsingFlip(mContext) || !flip.isFlipped()) return;  // AOD survives
+            //   transitionTo(State.FINISH);  // AOD killed!
+            //
+            // With DeviceIdentityHook making isFlipDevice()→false, isUsingFlip() always
+            // returns false. We need isFlipped()→false so !isFlipped()=true keeps AOD alive.
+            // We also force isUsingFlip()→true so flip-specific AOD clock style works.
+            runCatching {
+                val flipCtrlClass = machineCl.loadClass("com.miui.aod.flip.FlipLinkageStyleController")
+                val instanceField = flipCtrlClass.getDeclaredField("INSTANCE")
+                instanceField.isAccessible = true
+                val flipCtrl = instanceField.get(null)
+                if (flipCtrl != null) {
+                    // Hook isFlipped() → always false (prevents kill switch)
+                    runCatching {
+                        val isFlippedMethod = flipCtrlClass.getDeclaredMethod("isFlipped")
+                        isFlippedMethod.isAccessible = true
+                        hook(isFlippedMethod, replaceResult(false))
+                        log("AodHook: ✓ L2 FlipLinkageStyleController.isFlipped → false (runtime)")
+                    }.onFailure { log("AodHook: L2 isFlipped hook failed", it) }
+
+                    // Hook isUsingFlip() → always true (enables flip AOD clock style)
+                    runCatching {
+                        val isUsingFlipMethod = flipCtrlClass.getDeclaredMethod("isUsingFlip",
+                            android.content.Context::class.java)
+                        isUsingFlipMethod.isAccessible = true
+                        hook(isUsingFlipMethod, replaceResult(true))
+                        log("AodHook: ✓ L2 FlipLinkageStyleController.isUsingFlip → true (runtime)")
+                    }.onFailure { log("AodHook: L2 isUsingFlip hook failed", it) }
+                }
+            }.onFailure { log("AodHook: L2 FlipLinkageStyleController not found", it) }
 
         } catch (e: Exception) {
             log("AodHook/L2: installRuntimeHooks failed", e)
