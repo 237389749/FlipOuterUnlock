@@ -162,86 +162,66 @@ object SystemUIHook : BaseHook() {
 
     // ── Lock screen touch fix: unlock swipe + shortcut clicks ──────────
     //
-    // The tiny lock screen panel (TinyKeyguardPanelViewControllerImpl) renders
-    // on top of the shortcut container in KeyguardRootView. Its TouchHandler
-    // intercepts ALL touches — only the camera icon has explicit hit-test logic.
-    // Other shortcuts (flashlight etc.) receive no touch events because the
-    // panel consumes them.
+    // The tiny lock screen panel (TinyKeyguardPanelView) is a full-screen
+    // FrameLayout that overlays the shortcut container in KeyguardRootView.
+    // Its TouchHandler intercepts and consumes ALL touches — only the camera
+    // icon has explicit hit-test logic. Other shortcuts (flashlight etc.)
+    // receive no touch events because the panel eats them.
     //
-    // Additionally, the fling() unlock gate checks mBarState != 0. If mBarState
-    // is SHADE (0) instead of KEYGUARD (1), swipe-up won't unlock — it just
-    // closes the panel. Pulling down notification shade resets the state, which
-    // is why that workaround temporarily fixes the issue.
+    // The fling() unlock gate checks mBarState != 0. If mBarState is SHADE(0)
+    // instead of KEYGUARD(1), swipe-up only closes the panel instead of unlocking.
     //
-    // Fix 1: Hook fling() to bypass mBarState == 0 check, allowing unlock.
-    // Fix 2: Hook onInterceptTouchEvent to pass through non-camera touches,
-    //        letting shortcuts underneath receive click events.
+    // Approach: hook TinyKeyguardPanelView.dispatchTouchEvent directly.
+    // For touches in the lower screen area (where shortcuts are), don't
+    // consume the event — let it fall through to the shortcut container below.
+    // For swipe-up unlock, also set the result to false when mBarState is wrong.
     private fun hookLockScreenTouchFix(param: PackageReadyParam) {
+        // Fix 1: Shortcut clicks — hook ViewGroup.dispatchTouchEvent, filter for
+        // TinyKeyguardPanelView, pass through touches in the lower screen area.
         runCatching {
-            val implClass = param.classLoader.loadClass(
-                "com.android.keyguard.tinyPanel.TinyKeyguardPanelViewControllerImpl"
+            val dispatchMethod = android.view.ViewGroup::class.java
+                .getDeclaredMethod("dispatchTouchEvent", android.view.MotionEvent::class.java)
+            dispatchMethod.isAccessible = true
+            hook(dispatchMethod) { chain ->
+                val view = chain.thisObject as? android.view.View
+                if (view?.javaClass?.name?.contains("TinyKeyguardPanelView") != true) {
+                    return@hook chain.proceed()
+                }
+                val ev = chain.args[0] as? android.view.MotionEvent ?: return@hook chain.proceed()
+                if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+                    val screenH = android.content.res.Resources.getSystem().displayMetrics.heightPixels
+                    if (ev.y > screenH * 0.55f) {
+                        log("SystemUI/LockScreen: pass-through shortcut touch at y=${ev.y}")
+                        return@hook false
+                    }
+                }
+                chain.proceed()
+            }
+            log("SystemUI: hooked ViewGroup.dispatchTouchEvent → TinyKeyguardPanelView filter")
+        }.onFailure { log("SystemUI: dispatchTouchEvent hook failed", it) }
+
+        // Also fix the unlock swipe gate. Instead of hooking the complex
+        // fling() method, set mCanDismissLockScreen=true on the keyguard
+        // state controller so swipe-up always attempts unlock.
+        runCatching {
+            val ksClass = param.classLoader.loadClass(
+                "com.android.systemui.statusbar.policy.KeyguardStateControllerImpl"
             )
+            val canDismissField = ksClass.getDeclaredField("mCanDismissLockScreen")
+            canDismissField.isAccessible = true
 
-            // Fix 1: fling(float, boolean, boolean) — bypass mBarState==0 gate.
-            // Original: if (z || mBarState == 0 || !mCanDismissLockScreen) → close only
-            // Fixed: force mBarState check to pass by checking field and overriding
-            runCatching {
-                val flingMethod = implClass.getDeclaredMethod("fling",
-                    Float::class.javaPrimitiveType!!,
-                    Boolean::class.javaPrimitiveType!!,
-                    Boolean::class.javaPrimitiveType!!)
-                flingMethod.isAccessible = true
-                hook(flingMethod) { chain ->
-                    // Force mBarState != 0 so unlock path is taken
-                    // mBarState field: 0=SHADE, 1=KEYGUARD
-                    val barStateField = chain.thisObject.javaClass.getDeclaredField("mBarState")
-                    barStateField.isAccessible = true
-                    val saved = barStateField.getInt(chain.thisObject)
-                    if (saved == 0) {
-                        barStateField.setInt(chain.thisObject, 1)
-                        log("SystemUI/LockScreen: forced mBarState 0→1 for unlock swipe")
-                    }
-                    chain.proceed()
-                    if (saved == 0) {
-                        barStateField.setInt(chain.thisObject, saved)
-                    }
-                }
-                log("SystemUI: hooked TinyKeyguardPanelViewControllerImpl.fling()")
-            }.onFailure { log("SystemUI: fling hook failed", it) }
-
-            // Fix 2: TouchHandler.onInterceptTouchEvent — pass through shortcut touches.
-            // The TouchHandler only has hit-test for the camera icon. All other touches
-            // are consumed by the panel. We let ACTION_DOWN pass through when the touch
-            // is NOT on the camera icon, so shortcuts underneath can receive clicks.
-            runCatching {
-                val touchHandlerClass = implClass.classLoader.loadClass(
-                    "com.android.keyguard.tinyPanel.TinyKeyguardPanelViewControllerImpl\$TouchHandler"
-                )
-                val interceptMethod = touchHandlerClass.getDeclaredMethod("onInterceptTouchEvent",
-                    android.view.MotionEvent::class.java)
-                interceptMethod.isAccessible = true
-                hook(interceptMethod) { chain ->
-                    val result = chain.proceed() as? Boolean ?: false
-                    // If the original handler intercepted (returned true) and the
-                    // touch is NOT on the camera icon, let it pass through to the
-                    // shortcut container underneath.
-                    if (result && chain.args[0] is android.view.MotionEvent) {
-                        val ev = chain.args[0] as android.view.MotionEvent
-                        if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
-                            // Camera icon is near the top of screen; shortcuts are
-                            // at the bottom. If touch is in the lower half, let it through.
-                            val screenHeight = android.content.res.Resources.getSystem().displayMetrics.heightPixels
-                            if (ev.y > screenHeight * 0.6f) {
-                                log("SystemUI/LockScreen: passing through shortcut touch at y=${ev.y}")
-                                return@hook false
-                            }
-                        }
-                    }
-                    result
-                }
-                log("SystemUI: hooked TouchHandler.onInterceptTouchEvent")
-            }.onFailure { log("SystemUI: TouchHandler hook failed", it) }
-
-        }.onFailure { log("SystemUI: lock screen touch fix failed", it) }
+            // Hook onStartedWakingUp to force mCanDismissLockScreen = true
+            val wakeMethod = ksClass.getDeclaredMethod("onStartedWakingUp")
+            wakeMethod.isAccessible = true
+            hook(wakeMethod, after { chain, result ->
+                val ctrl = chain.thisObject
+                try {
+                    canDismissField.setBoolean(ctrl, true)
+                    log("SystemUI/LockScreen: forced mCanDismissLockScreen=true")
+                } catch (_: Exception) {}
+                result
+            })
+            log("SystemUI: hooked KeyguardStateControllerImpl.onStartedWakingUp")
+        }.onFailure { log("SystemUI: KeyguardStateControllerImpl hook failed", it) }
     }
 }
