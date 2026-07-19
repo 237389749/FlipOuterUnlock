@@ -176,52 +176,49 @@ object SystemUIHook : BaseHook() {
     // consume the event — let it fall through to the shortcut container below.
     // For swipe-up unlock, also set the result to false when mBarState is wrong.
     private fun hookLockScreenTouchFix(param: PackageReadyParam) {
-        // Fix 1: Shortcut clicks — hook ViewGroup.dispatchTouchEvent, filter for
-        // TinyKeyguardPanelView, pass through touches in the lower screen area.
+        // The tiny lock screen panel (TinyKeyguardPanelView) renders on top of
+        // the shortcut container, blocking shortcut clicks. It also has complex
+        // internal state (mBarState, mCanDismissLockScreen, mInteractive) that
+        // can prevent swipe-up unlock from working.
+        //
+        // Fix: make the panel not intercept touches so they fall through to
+        // the shortcut container. The panel stays visible (lock screen content
+        // still renders), but all touch events pass through.
         runCatching {
-            val dispatchMethod = android.view.ViewGroup::class.java
-                .getDeclaredMethod("dispatchTouchEvent", android.view.MotionEvent::class.java)
-            dispatchMethod.isAccessible = true
-            hook(dispatchMethod) { chain ->
-                val view = chain.thisObject as? android.view.View
-                if (view?.javaClass?.name?.contains("TinyKeyguardPanelView") != true) {
-                    return@hook chain.proceed()
-                }
-                val ev = chain.args[0] as? android.view.MotionEvent ?: return@hook chain.proceed()
-                if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
-                    val screenH = android.content.res.Resources.getSystem().displayMetrics.heightPixels
-                    if (ev.y > screenH * 0.55f) {
-                        log("SystemUI/LockScreen: pass-through shortcut touch at y=${ev.y}")
-                        return@hook false
+            val panelClass = findClass(param.classLoader,
+                "com.android.keyguard.tinyPanel.TinyKeyguardPanelView",
+                "com.android.keyguard.tinypanel.TinyKeyguardPanelView")
+            if (panelClass == null) {
+                log("SystemUI/LockScreen: TinyKeyguardPanelView class not found")
+                return@runCatching
+            }
+            // Hook onAttachedToWindow — after attach, disable touch interception
+            val attachMethod = panelClass.getMethod("onAttachedToWindow")
+            hook(attachMethod, after { chain, result ->
+                val view = chain.thisObject as? android.view.View ?: return@after result
+                // Disable touch interception for the panel itself
+                view.isClickable = false
+                view.isFocusable = false
+                // Make entire panel non-intercepting so touches reach children/siblings
+                runCatching {
+                    val lp = view.layoutParams as? android.view.WindowManager.LayoutParams
+                    if (lp != null) {
+                        lp.flags = lp.flags or android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                        val wm = view.context.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
+                        wm.updateViewLayout(view, lp)
                     }
                 }
-                chain.proceed()
-            }
-            log("SystemUI: hooked ViewGroup.dispatchTouchEvent → TinyKeyguardPanelView filter")
-        }.onFailure { log("SystemUI: dispatchTouchEvent hook failed", it) }
-
-        // Also fix the unlock swipe gate. Instead of hooking the complex
-        // fling() method, set mCanDismissLockScreen=true on the keyguard
-        // state controller so swipe-up always attempts unlock.
-        runCatching {
-            val ksClass = param.classLoader.loadClass(
-                "com.android.systemui.statusbar.policy.KeyguardStateControllerImpl"
-            )
-            val canDismissField = ksClass.getDeclaredField("mCanDismissLockScreen")
-            canDismissField.isAccessible = true
-
-            // Hook onStartedWakingUp to force mCanDismissLockScreen = true
-            val wakeMethod = ksClass.getDeclaredMethod("onStartedWakingUp")
-            wakeMethod.isAccessible = true
-            hook(wakeMethod, after { chain, result ->
-                val ctrl = chain.thisObject
-                try {
-                    canDismissField.setBoolean(ctrl, true)
-                    log("SystemUI/LockScreen: forced mCanDismissLockScreen=true")
-                } catch (_: Exception) {}
+                log("SystemUI/LockScreen: TinyKeyguardPanelView → NOT_TOUCHABLE")
                 result
             })
-            log("SystemUI: hooked KeyguardStateControllerImpl.onStartedWakingUp")
-        }.onFailure { log("SystemUI: KeyguardStateControllerImpl hook failed", it) }
+            log("SystemUI: hooked TinyKeyguardPanelView.onAttachedToWindow")
+        }.onFailure { log("SystemUI: TinyKeyguardPanelView hook failed", it) }
+    }
+
+    private fun findClass(cl: ClassLoader, vararg names: String): Class<*>? {
+        for (name in names) {
+            runCatching { return cl.loadClass(name) }
+        }
+        return null
     }
 }
