@@ -39,6 +39,7 @@ object LockScreenHook : BaseHook() {
     override fun setupHooks(param: PackageReadyParam) {
         log("LockScreenHook: loading for ${param.packageName}")
         safeHook("LockScreenHook") {
+            hookLargeScreenLayout(param)
             hookTinyScreen(param)
             hookFlipTinyScreen(param)
             hookInstantFlipTinyScreen(param)
@@ -46,7 +47,33 @@ object LockScreenHook : BaseHook() {
         }
     }
 
-    // A. isTinyScreen + isFlipTinyScreen → false
+    // A. Force large-screen layout by overriding smallestScreenWidthDp.
+    //    The lock screen uses smallestScreenWidthDp >= 600 to decide between
+    //    large-screen (inner) and small-screen (outer) layout. Outer screen
+    //    1208×1392 @ 520dpi → 371dp, far below 600dp. Hook Resources to
+    //    report smallestScreenWidthDp ≥ 600 so lock screen uses large layout.
+    private fun hookLargeScreenLayout(param: PackageReadyParam) {
+        runCatching {
+            val resClass = android.content.res.Resources::class.java
+            val getConfigMethod = resClass.getDeclaredMethod("getConfiguration")
+            getConfigMethod.isAccessible = true
+            hook(getConfigMethod) { chain ->
+                val config = (chain.proceed() as? android.content.res.Configuration)
+                    ?: return@hook chain.proceed()
+                if (config.smallestScreenWidthDp < 600) {
+                    // Force large-screen layout without modifying actual density
+                    val field = android.content.res.Configuration::class.java
+                        .getDeclaredField("smallestScreenWidthDp")
+                    field.isAccessible = true
+                    field.setInt(config, 600)
+                }
+                config
+            }
+            log("LockScreen: ✓ smallestScreenWidthDp → ≥600 (large-screen layout)")
+        }.onFailure { log("LockScreen: smallestScreenWidthDp fix failed", it) }
+    }
+
+    // B. isTinyScreen + isFlipTinyScreen → false
     //    isTinyScreen: max(px)/density <= 670dp → compact layout on outer screen
     //    isFlipTinyScreen: isFlipDevice && isTinyScreen → tiny panel path
     //    Both → false forces inner-screen (large) lock screen style on outer screen.
