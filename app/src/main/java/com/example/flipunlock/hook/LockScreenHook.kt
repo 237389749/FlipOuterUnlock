@@ -39,15 +39,28 @@ object LockScreenHook : BaseHook() {
     override fun setupHooks(param: PackageReadyParam) {
         log("LockScreenHook: loading for ${param.packageName}")
         safeHook("LockScreenHook") {
+            hookTinyScreen(param)
             hookFlipTinyScreen(param)
             hookInstantFlipTinyScreen(param)
             hookReplaceController(param)
         }
     }
 
-    // A. isFlipTinyScreen → false
-    //    Switches panel internal logic to normal (non-tiny) path.
-    //    Fixes: unlock swipe (mBarState check bypassed), wallpaper type 8→2
+    // A. isTinyScreen + isFlipTinyScreen → false
+    //    isTinyScreen: max(px)/density <= 670dp → compact layout on outer screen
+    //    isFlipTinyScreen: isFlipDevice && isTinyScreen → tiny panel path
+    //    Both → false forces inner-screen (large) lock screen style on outer screen.
+    private fun hookTinyScreen(param: PackageReadyParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass("com.miui.utils.configs.MiuiConfigs")
+            val method = cls.getDeclaredMethod("isTinyScreen",
+                android.content.Context::class.java)
+            method.isAccessible = true
+            hook(method, replaceResult(false))
+            log("LockScreen: ✓ isTinyScreen → false (inner-screen style)")
+        }.onFailure { log("LockScreen: isTinyScreen failed", it) }
+    }
+
     private fun hookFlipTinyScreen(param: PackageReadyParam) {
         runCatching {
             val cls = param.classLoader.loadClass("com.miui.utils.configs.MiuiConfigs")
