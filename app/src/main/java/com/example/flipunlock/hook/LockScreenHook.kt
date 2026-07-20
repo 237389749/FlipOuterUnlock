@@ -73,18 +73,41 @@ object LockScreenHook : BaseHook() {
     }
 
     // B. isInstantFlipTinyScreen → false
-    //    This controls shouldPanelBeVisible() = mKeyguardVisibility && isInstantFlipTinyScreen()
-    //    When false, panel becomes INVISIBLE so keyguard_root_view (with shortcuts) is
-    //    the primary lock screen UI and receives touches directly.
-    //    Uses sInstantAppConfig.screenType, which is DIFFERENT from Configuration.getScreenType.
+    //    This controls shouldPanelBeVisible() and awesomeLockScreen visibility.
+    //    SystemUIApplication.onConfigurationChanged() calls:
+    //      sInstantAppConfig.updateFrom(configuration)
+    //    which copies the screenType FIELD (not getter). ScreenTypeHook only
+    //    intercepts getScreenType(), so sInstantAppConfig.screenType stays 1.
+    //    Fix: hook SystemUIApplication.onConfigurationChanged to force screenType=0.
     private fun hookInstantFlipTinyScreen(param: PackageReadyParam) {
         runCatching {
+            // Hook the static method itself as defense
             val cls = param.classLoader.loadClass("com.miui.utils.configs.MiuiConfigs")
             val method = cls.getDeclaredMethod("isInstantFlipTinyScreen")
             method.isAccessible = true
             hook(method, replaceResult(false))
             log("LockScreen: ✓ isInstantFlipTinyScreen → false")
         }.onFailure { log("LockScreen: isInstantFlipTinyScreen failed", it) }
+
+        // Hook SystemUIApplication to force sInstantAppConfig.screenType = 0
+        // after every configuration change. This is the ROOT FIX because
+        // isInstantFlipTinyScreen reads the screenType FIELD directly.
+        runCatching {
+            val appClass = param.classLoader.loadClass(
+                "com.android.systemui.SystemUIApplication")
+            val onConfigMethod = appClass.getDeclaredMethod("onConfigurationChanged",
+                android.content.res.Configuration::class.java)
+            onConfigMethod.isAccessible = true
+            hook(onConfigMethod, after { _, _ ->
+                val configClass = param.classLoader.loadClass(
+                    "com.miui.utils.configs.MiuiConfigs")
+                val field = configClass.getDeclaredField("sInstantAppConfig")
+                field.isAccessible = true
+                val config = field.get(null) as? android.content.res.Configuration
+                config?.screenType = 0
+            })
+            log("LockScreen: ✓ sInstantAppConfig.screenType → 0 after config change")
+        }.onFailure { log("LockScreen: sInstantAppConfig fix failed", it) }
     }
 
     // C. Replace TinyKeyguardPanelViewControllerImpl with Dummy
