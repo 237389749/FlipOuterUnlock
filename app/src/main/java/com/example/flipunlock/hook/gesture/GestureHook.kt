@@ -12,22 +12,19 @@ import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
- * v3: Let fliphome InputMonitor work but redirect gestures to standard HOME.
+ * v3: Let fliphome InputMonitor capture touches, redirect outcomes to standard HOME.
  *
- * Architecture of fliphome gesture system:
- *   GestureStubView (edge back)  ← WindowManager overlays, independent of InputMonitor
- *   GestureInputHelper.InputMonitor ← captures ALL touches on the display
- *     → GestureTouchEventTracker → GestureMode (Home / App / Recents / Keyguard / Empty)
+ * Why blocking InputMonitor (v2) broke Home/Recents:
+ *   SystemUI's NavigationBar does NOT handle bottom gestures on flip outer screens —
+ *   the gesture pill/area is absent. Blocking initInputMonitor() killed the only
+ *   bottom gesture handler. Back kept working via GestureStubView (edge overlays,
+ *   independent of InputMonitor).
  *
- * v2 blocked initInputMonitor() entirely. This killed Home/Recents (InputMonitor-dependent)
- * while Back continued working via GestureStubView edge overlays.
- *
- * v3 lets the InputMonitor capture touches but fixes the outcomes:
- *   1. InputMonitor works normally (not blocked)
- *   2. isDisableHomeRecents() → false (never Empty mode)
- *   3. GestureModeHome: inject HOME intent when FlipLauncher is null
- *   4. GestureModeApp: fallback HOME intent
- *   5. FlipLauncher component disabled (hide UI, keep process alive)
+ * v3 approach:
+ *   1. Let InputMonitor work (not blocked) → bottom gestures are captured
+ *   2. isDisableHomeRecents() → false → GestureModeHelper never returns Empty
+ *   3. GestureModeApp.performAppToHome/Recents → after: inject HOME intent
+ *      (the recents animation controller is null without FlipLauncher)
  */
 object GestureHook : BaseHook() {
     override val targetPackages = listOf("com.miui.fliphome")
@@ -35,11 +32,12 @@ object GestureHook : BaseHook() {
     private var launcherDisabled = false
 
     override fun setupHooks(param: PackageReadyParam) {
+        log("GestureFix: setupHooks START for ${param.packageName}")
         hookNoStartPage(param)
         disableFlipLauncher(param)
         keepGesturesEnabled(param)
-        fixHomeGestureOutcome(param)
-        fixAppGestureOutcome(param)
+        fixGestureOutcome(param)
+        log("GestureFix: setupHooks DONE")
     }
 
     // ── 1. No start page (ported from MixFlipMod) ────────────────────────
@@ -50,23 +48,20 @@ object GestureHook : BaseHook() {
                 UserHandle::class.java, Intent::class.java, Bundle::class.java, View::class.java)
             hook(method, replaceResult(false))
             log("GestureFix: disabled start page intercept")
-        }.onFailure { log("GestureFix: PerformLaunchAction not found (harmless)", it) }
+        }.onFailure { log("GestureFix: PerformLaunchAction not found", it) }
     }
 
-    // ── 2. Disable FlipLauncher component ─────────────────────────────────
+    // ── 2. Disable FlipLauncher component (keep process alive) ───────────
     private fun disableFlipLauncher(param: PackageReadyParam) {
         if (launcherDisabled) return
         runCatching {
-            val flipAppClass = param.classLoader.loadClass(
-                "com.miui.fliphome.FlipApplication")
+            val flipAppClass = param.classLoader.loadClass("com.miui.fliphome.FlipApplication")
             hook(flipAppClass.method("onCreate"), after { chain, result ->
                 if (launcherDisabled) return@after result
                 runCatching {
                     val app = chain.thisObject
-                    val ctx = app.callMethod("getApplicationContext") as? Context
-                        ?: return@runCatching
-                    val component = ComponentName(
-                        "com.miui.fliphome", "com.miui.fliphome.FlipLauncher")
+                    val ctx = app.callMethod("getApplicationContext") as? Context ?: return@runCatching
+                    val component = ComponentName("com.miui.fliphome", "com.miui.fliphome.FlipLauncher")
                     val pm = ctx.packageManager
                     val state = pm.getComponentEnabledSetting(component)
                     if (state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
@@ -76,7 +71,7 @@ object GestureHook : BaseHook() {
                         launcherDisabled = true
                         log("GestureFix: disabled FlipLauncher")
                     }
-                }.onFailure { log("GestureFix: disable FlipLauncher failed", it) }
+                }.onFailure { log("GestureFix: disable FlipLauncher err", it) }
                 result
             })
             log("GestureFix: hooked FlipApplication.onCreate")
@@ -85,190 +80,104 @@ object GestureHook : BaseHook() {
 
     // ── 3. Keep gestures always enabled ──────────────────────────────────
     private fun keepGesturesEnabled(param: PackageReadyParam) {
-        // 3a. GestureModeHelper.isDisableHomeRecents() → false
-        //     When SystemUI sets flags that disable nav bar, fliphome normally
-        //     switches to GestureModeEmpty (no-op). Force false so gestures
-        //     are always processed.
+        // 3a. isDisableHomeRecents() → false (never GestureModeEmpty)
         runCatching {
-            val cls = param.classLoader.loadClass(
-                "com.miui.fliphome.gesture.GestureModeHelper")
+            val cls = param.classLoader.loadClass("com.miui.fliphome.gesture.GestureModeHelper")
             val method = cls.getDeclaredMethod("isDisableHomeRecents")
             method.isAccessible = true
             hook(method, replaceResult(false))
-            log("GestureFix: isDisableHomeRecents → false")
+            log("GestureFix: isDisableHomeRecents -> false")
         }.onFailure { log("GestureFix: isDisableHomeRecents failed", it) }
-
-        // 3b. Block clearBackStubWindow() → keep edge back stubs alive
-        runCatching {
-            val cls = param.classLoader.loadClass(
-                "com.miui.fliphome.gesture.BaseGestureImpl")
-            val method = cls.getDeclaredMethod("clearBackStubWindow")
-            method.isAccessible = true
-            hook(method) { chain ->
-                log("GestureFix: BLOCKED clearBackStubWindow")
-            }
-            log("GestureFix: blocked clearBackStubWindow")
-        }.onFailure { log("GestureFix: clearBackStubWindow failed", it) }
-
-        // 3c. Block disableGestureInput() → always keep input enabled
-        runCatching {
-            val cls = param.classLoader.loadClass(
-                "com.miui.fliphome.gesture.BaseGestureImpl")
-            val method = cls.getDeclaredMethod("disableGestureInput")
-            method.isAccessible = true
-            hook(method) { chain ->
-                log("GestureFix: BLOCKED disableGestureInput")
-            }
-            log("GestureFix: blocked disableGestureInput")
-        }.onFailure { log("GestureFix: disableGestureInput failed", it) }
     }
 
-    // ── 4. Fix GestureModeHome — inject HOME intent ──────────────────────
-    //    GestureModeHome.performHomeToHome() and checkIfStartHome() depend
-    //    on FlipLauncher (mLauncher field). When FlipLauncher is disabled,
-    //    mLauncher is null and no HOME action is taken.
+    // ── 4. Fix gesture outcomes: inject HOME intent ──────────────────────
+    //    Two key paths need fixing:
+    //    A. GestureModeHome.performHomeToHome() — mLauncher is null → no HOME sent
+    //    B. GestureModeApp.performAppToHome/Recents() — animation controller null → no-op
     //
-    //    Fix: hook checkIfStartHome() to send HOME intent directly.
-    //    This covers swipe-up-from-home → return to real launcher.
-    private fun fixHomeGestureOutcome(param: PackageReadyParam) {
-        val gestureModeClass = param.classLoader.loadClass(
-            "com.miui.fliphome.gesture.GestureMode")
-        val mContextField = gestureModeClass.getDeclaredField("mContext")
-        mContextField.isAccessible = true
+    //    We hook performHomeToHome + performAppToHome + performAppToRecents
+    //    with after-hooks that inject a standard HOME intent.
+    //    The original code runs first (animations, cleanup), then our HOME fires.
+    private fun fixGestureOutcome(param: PackageReadyParam) {
+        // Shared: read mContext field from GestureMode superclass
+        fun getContext(instance: Any?): Context? = runCatching {
+            val modeClass = param.classLoader.loadClass("com.miui.fliphome.gesture.GestureMode")
+            val field = modeClass.getDeclaredField("mContext")
+            field.isAccessible = true
+            field.get(instance) as? Context
+        }.getOrNull()
 
-        // Hook checkIfStartHome() — primary home path
-        runCatching {
-            val homeClass = param.classLoader.loadClass(
-                "com.miui.fliphome.gesture.GestureModeHome")
-            val method = homeClass.getDeclaredMethod("checkIfStartHome")
-            method.isAccessible = true
-            hook(method) { chain ->
-                log("GestureFix: checkIfStartHome → sending HOME intent")
-                runCatching {
-                    val ctx = mContextField.get(chain.thisObject) as? Context
-                    if (ctx != null) {
-                        ctx.startActivity(Intent(Intent.ACTION_MAIN).apply {
-                            addCategory(Intent.CATEGORY_HOME)
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-                        })
-                        log("GestureFix: HOME intent sent from checkIfStartHome")
-                    }
-                }.onFailure { log("GestureFix: checkIfStartHome HOME failed", it) }
-                chain.proceed()
+        val homeIntentFactory: () -> Intent = {
+            Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
-            log("GestureFix: hooked GestureModeHome.checkIfStartHome")
-        }.onFailure { log("GestureFix: checkIfStartHome hook failed", it) }
+        }
 
-        // Hook performHomeToHome() — secondary path (after hold state)
+        // 4a. GestureModeHome.performHomeToHome() — home screen swipe-up
         runCatching {
-            val homeClass = param.classLoader.loadClass(
-                "com.miui.fliphome.gesture.GestureModeHome")
-            val method = homeClass.getDeclaredMethod("performHomeToHome")
+            val cls = param.classLoader.loadClass("com.miui.fliphome.gesture.GestureModeHome")
+            val method = cls.getDeclaredMethod("performHomeToHome")
             method.isAccessible = true
             hook(method, after { chain, result ->
-                runCatching {
-                    val ctx = mContextField.get(chain.thisObject) as? Context
-                    if (ctx != null) {
-                        ctx.startActivity(Intent(Intent.ACTION_MAIN).apply {
-                            addCategory(Intent.CATEGORY_HOME)
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        })
-                        log("GestureFix: HOME intent sent from performHomeToHome")
-                    }
-                }.onFailure { log("GestureFix: performHomeToHome HOME failed", it) }
+                val ctx = getContext(chain.thisObject)
+                if (ctx != null) {
+                    ctx.startActivity(homeIntentFactory())
+                    log("GestureFix: HOME from GestureModeHome.performHomeToHome")
+                }
                 result
             })
             log("GestureFix: hooked GestureModeHome.performHomeToHome")
-        }.onFailure { log("GestureFix: performHomeToHome hook failed", it) }
-    }
+        }.onFailure { log("GestureFix: GestureModeHome.performHomeToHome failed", it) }
 
-    // ── 5. Fix GestureModeApp — redirect to home ─────────────────────────
-    //    With miuihome (com.miui.home) as the active home, isHomeStackVisible()
-    //    returns false (it checks for com.miui.fliphome package). So most
-    //    bottom gestures end up in GestureModeApp, not GestureModeHome.
-    //
-    //    performAppToHome() → recents animation → finish(true). But without
-    //    FlipLauncher, the recents animation controller is null → no-op.
-    //    We inject HOME intent as fallback.
-    //
-    //    performAppToRecents() → tries to show FlipLauncher's recents view.
-    //    Without FlipLauncher, this fails. Redirect to home instead.
-    private fun fixAppGestureOutcome(param: PackageReadyParam) {
-        val gestureModeClass = param.classLoader.loadClass(
-            "com.miui.fliphome.gesture.GestureMode")
-        val mContextField = gestureModeClass.getDeclaredField("mContext")
-        mContextField.isAccessible = true
-
-        val appClass = param.classLoader.loadClass(
-            "com.miui.fliphome.gesture.GestureModeApp")
-
-        // 5a. performAppToHome() → fallback HOME intent
-        //     Original code calls finish(true) via recents animation controller.
-        //     When FlipLauncher is disabled, the controller is null → nothing happens.
-        //     Hook to send HOME intent as guaranteed fallback.
+        // 4b. GestureModeApp.performAppToHome() — app foreground swipe-up → home
         runCatching {
-            val method = appClass.getDeclaredMethod("performAppToHome")
+            val cls = param.classLoader.loadClass("com.miui.fliphome.gesture.GestureModeApp")
+            val method = cls.getDeclaredMethod("performAppToHome")
             method.isAccessible = true
             hook(method, after { chain, result ->
-                runCatching {
-                    val ctx = mContextField.get(chain.thisObject) as? Context
-                    if (ctx != null) {
-                        ctx.startActivity(Intent(Intent.ACTION_MAIN).apply {
-                            addCategory(Intent.CATEGORY_HOME)
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        })
-                        log("GestureFix: HOME intent sent from GestureModeApp.performAppToHome")
-                    }
-                }.onFailure { log("GestureFix: performAppToHome HOME failed", it) }
+                val ctx = getContext(chain.thisObject)
+                if (ctx != null) {
+                    ctx.startActivity(homeIntentFactory())
+                    log("GestureFix: HOME from GestureModeApp.performAppToHome")
+                }
                 result
             })
             log("GestureFix: hooked GestureModeApp.performAppToHome")
-        }.onFailure { log("GestureFix: performAppToHome hook failed", it) }
+        }.onFailure { log("GestureFix: GestureModeApp.performAppToHome failed", it) }
 
-        // 5b. performAppToRecents(boolean) → redirect to home
-        //     fliphome's recents view requires FlipLauncher. Without it,
-        //     recents can't be shown. Redirect to home as reasonable alternative.
+        // 4c. GestureModeApp.performAppToRecents(boolean) — swipe-up-hold → recents
+        //     With FlipLauncher disabled, recents view can't be shown → redirect to home.
         runCatching {
-            val method = appClass.getDeclaredMethod("performAppToRecents",
+            val cls = param.classLoader.loadClass("com.miui.fliphome.gesture.GestureModeApp")
+            val method = cls.getDeclaredMethod("performAppToRecents",
                 Boolean::class.javaPrimitiveType!!)
             method.isAccessible = true
             hook(method, after { chain, result ->
-                runCatching {
-                    val ctx = mContextField.get(chain.thisObject) as? Context
-                    if (ctx != null) {
-                        ctx.startActivity(Intent(Intent.ACTION_MAIN).apply {
-                            addCategory(Intent.CATEGORY_HOME)
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        })
-                        log("GestureFix: HOME intent sent from GestureModeApp.performAppToRecents")
-                    }
-                }.onFailure { log("GestureFix: performAppToRecents HOME failed", it) }
+                val ctx = getContext(chain.thisObject)
+                if (ctx != null) {
+                    ctx.startActivity(homeIntentFactory())
+                    log("GestureFix: HOME from GestureModeApp.performAppToRecents")
+                }
                 result
             })
             log("GestureFix: hooked GestureModeApp.performAppToRecents")
-        }.onFailure { log("GestureFix: performAppToRecents hook failed", it) }
+        }.onFailure { log("GestureFix: GestureModeApp.performAppToRecents failed", it) }
 
-        // 5c. GestureModeRecents.performRecentsToHome() → ensure HOME
+        // 4d. GestureModeRecents.performRecentsToHome() — recents → home
         runCatching {
-            val recentsClass = param.classLoader.loadClass(
-                "com.miui.fliphome.gesture.GestureModeRecents")
-            val method = recentsClass.getDeclaredMethod("performRecentsToHome")
+            val cls = param.classLoader.loadClass("com.miui.fliphome.gesture.GestureModeRecents")
+            val method = cls.getDeclaredMethod("performRecentsToHome")
             method.isAccessible = true
             hook(method, after { chain, result ->
-                runCatching {
-                    val ctx = mContextField.get(chain.thisObject) as? Context
-                    if (ctx != null) {
-                        ctx.startActivity(Intent(Intent.ACTION_MAIN).apply {
-                            addCategory(Intent.CATEGORY_HOME)
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        })
-                        log("GestureFix: HOME intent sent from GestureModeRecents")
-                    }
-                }.onFailure { log("GestureFix: performRecentsToHome HOME failed", it) }
+                val ctx = getContext(chain.thisObject)
+                if (ctx != null) {
+                    ctx.startActivity(homeIntentFactory())
+                    log("GestureFix: HOME from GestureModeRecents.performRecentsToHome")
+                }
                 result
             })
             log("GestureFix: hooked GestureModeRecents.performRecentsToHome")
-        }.onFailure { log("GestureFix: performRecentsToHome hook failed", it) }
+        }.onFailure { log("GestureFix: GestureModeRecents.performRecentsToHome failed", it) }
     }
 }
