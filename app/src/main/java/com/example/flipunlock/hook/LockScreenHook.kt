@@ -131,11 +131,12 @@ object LockScreenHook : BaseHook() {
     private fun hookControlCenterRelayout(param: PackageReadyParam) {
         runCatching {
             val cls = param.classLoader.loadClass(
-                "com.android.systemui.qs.MiuiTileLayout")
+                "com.android.systemui.p037qs.MiuiTileLayout")
             val method = cls.getDeclaredMethod("updateResources")
             method.isAccessible = true
             hook(method) { chain ->
                 val result = chain.proceed() as? Boolean ?: false
+                log("LockScreen: MiuiTileLayout.updateResources fired, cols before override")
                 // After resource load, force sw600dp column count (3 for portrait,
                 // 5 for landscape — matches large-screen layout)
                 val res = (chain.thisObject as? android.view.View)?.context?.resources
