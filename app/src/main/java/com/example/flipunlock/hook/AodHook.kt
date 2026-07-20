@@ -33,16 +33,13 @@ object AodHook : BaseHook() {
     // ── Layer 1: Framework DreamService hooks ────────────────────────────
 
     private fun hookFrameworkDreamService(cl: ClassLoader, pkg: String) {
-        // 1a. setDozeScreenState(int) — block screen-OFF states, force AOD ON (4)
+        // 1a. setDozeScreenState(int) — force screen ON, prevent OFF.
+        // DozeScreenState has a 6s mResetScreenTask timeout that calls
+        // setDozeScreenState(1) after INITIALIZED→DOZE_AOD. Block ALL
+        // OFF-related states (0,1,3) and force to 2 (ON). State 4 (AOD ON)
+        // is also redirected to 2 to avoid the reset timeout oscillation.
         //
-        // DozeMachine.State.screenState() values:
-        //   0 = FINISH/COVERMODE (OFF)
-        //   1 = DOZE/DOZE_AOD_PAUSED (OFF)
-        //   2 = DOZE_PULSING (ON — bright, for notifications)
-        //   3 = DOZE_AOD_PAUSING (video screen variant)
-        //   4 = DOZE_AOD (AOD display ON ★ — this is what we want)
-        //
-        // We redirect OFF→ON but let ON states (2,4) pass unchanged.
+        // Values: 0=FINISH, 1=DOZE, 2=ON/PULSING, 3=DOZE_SUSPEND, 4=DOZE_AOD
         runCatching {
             val method = android.service.dreams.DreamService::class.java
                 .getDeclaredMethod("setDozeScreenState", Int::class.javaPrimitiveType!!)
@@ -50,12 +47,11 @@ object AodHook : BaseHook() {
             hook(method) { chain ->
                 val state = chain.args[0] as? Int ?: return@hook chain.proceed()
                 when (state) {
-                    0, 1, 3 -> {
-                        // Screen-requesting OFF → force AOD ON
-                        log("AodHook/L1: BLOCKED setDozeScreenState($state) → 4 (AOD ON)")
-                        chain.args[0] = 4
+                    0, 1, 3, 4 -> {
+                        log("AodHook/L1: BLOCKED setDozeScreenState($state) → 2 (ON)")
+                        chain.args[0] = 2
                     }
-                    // 2 (PULSING/ON) and 4 (AOD ON) pass through
+                    // 2 (ON) passes through
                 }
                 chain.proceed()
             }
@@ -111,7 +107,7 @@ object AodHook : BaseHook() {
                     val stateName = state?.toString() ?: "null"
                     log("AodHook/L2: DozeMachine.requestState($stateName)")
                     when (stateName) {
-                        "DOZE", "DOZE_SUSPEND" -> {
+                        "DOZE", "DOZE_SUSPEND", "FINISH" -> {
                             log("AodHook/L2: REDIRECT $stateName → DOZE_AOD")
                             chain.args[0] = dozeAod
                         }
@@ -132,9 +128,9 @@ object AodHook : BaseHook() {
                     hook(method) { chain ->
                         val s = chain.args[0] as? Int ?: return@hook chain.proceed()
                         when (s) {
-                            0, 1, 3 -> {
-                                log("AodHook/L2: BLOCKED DozeService.setDozeScreenState($s) → 4 (AOD ON)")
-                                chain.args[0] = 4
+                            0, 1, 3, 4 -> {
+                                log("AodHook/L2: BLOCKED DozeService.setDozeScreenState($s) → 2 (ON)")
+                                chain.args[0] = 2
                             }
                         }
                         chain.proceed()
