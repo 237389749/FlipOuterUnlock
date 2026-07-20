@@ -32,6 +32,7 @@ object SystemUIHook : BaseHook() {
         hookNotificationMenu(param)
         hookStatusBarClock(param)
         hookStatusBarIcons(param)
+        hookNavigationBar(param)
     }
 
     // ── DecorWindowManagerImpl.shouldHideDecorWindow ────────────────────
@@ -159,20 +160,79 @@ object SystemUIHook : BaseHook() {
         }.onFailure { log("SystemUI: failed hook status bar icons", it) }
     }
 
-    // ── Lock screen touch fix: unlock swipe + shortcut clicks ──────────
+    // ── NavigationBar fix: force creation on flip outer screen ─────────
     //
-    // The tiny lock screen panel (TinyKeyguardPanelView) is a full-screen
-    // FrameLayout that overlays the shortcut container in KeyguardRootView.
-    // Its TouchHandler intercepts and consumes ALL touches — only the camera
-    // icon has explicit hit-test logic. Other shortcuts (flashlight etc.)
-    // receive no touch events because the panel eats them.
+    // NavigationBarControllerImpl creates the gesture navigation bar.
+    // Two guards prevent it on flip outer screens:
     //
-    // The fling() unlock gate checks mBarState != 0. If mBarState is SHADE(0)
-    // instead of KEYGUARD(1), swipe-up only closes the panel instead of unlocking.
+    // 1. createNavigationBar() checks:
+    //      isFlipTinyScreen(context) → return (fixed by LockScreenHook)
+    //      mIsFsgMode && mHideGestureLine → return (hooked below)
     //
-    // Approach: hook TinyKeyguardPanelView.dispatchTouchEvent directly.
-    // For touches in the lower screen area (where shortcuts are), don't
-    // consume the event — let it fall through to the shortcut container below.
-    // For swipe-up unlock, also set the result to false when mBarState is wrong.
+    // 2. onScreenLayoutSizeChanged() checks:
+    //      configuration.screenType == 1 → removeNavigationBar(0)
+    //      This uses the RAW screenType FIELD, bypassing ScreenTypeHook!
+    //      Fix: temporarily force screenType=0 so the check fails,
+    //      allowing the nav bar to be created/kept.
+    //
+    // Without NavigationBar, bottom gestures (Home/Recents) are absent
+    // in all apps. Desktop works via miuihome's NavStubView (LauncherHook).
+    private fun hookNavigationBar(param: PackageReadyParam) {
+        val implClass = param.classLoader.loadClass(
+            "com.android.systemui.navigationbar.NavigationBarControllerImpl")
+
+        // Hook onScreenLayoutSizeChanged(Configuration)
+        // Original: if (configuration.screenType == 1) removeNavigationBar(0)
+        // Fix: temporarily set screenType=0 so isFlipTinyScreen check fails
+        runCatching {
+            val method = implClass.getDeclaredMethod("onScreenLayoutSizeChanged",
+                android.content.res.Configuration::class.java)
+            method.isAccessible = true
+            val stField = android.content.res.Configuration::class.java
+                .getDeclaredField("screenType")
+            stField.isAccessible = true
+            hook(method) { chain ->
+                val config = chain.args[0] as? android.content.res.Configuration
+                val orig = config?.screenType ?: -1
+                if (orig == 1) {
+                    stField.setInt(config, 0)  // fool screenType == 1 check
+                }
+                try {
+                    chain.proceed()
+                } finally {
+                    if (orig == 1 && config != null) {
+                        stField.setInt(config, orig)  // restore
+                    }
+                }
+            }
+            log("NavBar: hooked onScreenLayoutSizeChanged")
+        }.onFailure { log("NavBar: onScreenLayoutSizeChanged failed", it) }
+
+        // Hook createNavigationBar(Display, Bundle, RegisterStatusBarResult)
+        // Bypass the mIsFsgMode && mHideGestureLine guard (line 254).
+        // Force both fields to false before the original method runs.
+        runCatching {
+            val method = implClass.getDeclaredMethod("createNavigationBar",
+                android.view.Display::class.java,
+                android.os.Bundle::class.java,
+                Class.forName("com.android.internal.statusbar.RegisterStatusBarResult"))
+            method.isAccessible = true
+            hook(method, before { chain ->
+                runCatching {
+                    val obj = chain.thisObject
+                    val injectorField = implClass.getDeclaredField("mNavigationModeControllerInjector")
+                    injectorField.isAccessible = true
+                    val injector = injectorField.get(obj)
+                    if (injector != null) {
+                        injector.javaClass.getDeclaredField("mIsFsgMode")
+                            .apply { isAccessible = true; setBoolean(injector, false) }
+                        injector.javaClass.getDeclaredField("mHideGestureLine")
+                            .apply { isAccessible = true; setBoolean(injector, false) }
+                    }
+                }
+            })
+            log("NavBar: hooked createNavigationBar")
+        }.onFailure { log("NavBar: createNavigationBar failed", it) }
+    }
 
 }
