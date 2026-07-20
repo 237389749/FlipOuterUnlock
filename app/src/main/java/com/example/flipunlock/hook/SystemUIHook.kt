@@ -32,7 +32,6 @@ object SystemUIHook : BaseHook() {
         hookNotificationMenu(param)
         hookStatusBarClock(param)
         hookStatusBarIcons(param)
-        hookLockScreenTouchFix(param)
     }
 
     // ── DecorWindowManagerImpl.shouldHideDecorWindow ────────────────────
@@ -175,44 +174,5 @@ object SystemUIHook : BaseHook() {
     // For touches in the lower screen area (where shortcuts are), don't
     // consume the event — let it fall through to the shortcut container below.
     // For swipe-up unlock, also set the result to false when mBarState is wrong.
-    private fun hookLockScreenTouchFix(param: PackageReadyParam) {
-        // DeviceIdentityHook excludes SystemUI, so isFlipDevice() still returns
-        // true. The Dagger factory at FlipKeyguardModule creates the Impl (real
-        // tiny lock screen panel controller) instead of the Dummy (no-op).
-        // The Impl's panel overlays the shortcut container, blocking clicks.
-        //
-        // Fix 1: force isFlipTinyScreen→false so panel logic uses normal paths.
-        runCatching {
-            val miuiConfigsClass = param.classLoader.loadClass(
-                "com.miui.utils.configs.MiuiConfigs")
-            val method = miuiConfigsClass.getDeclaredMethod("isFlipTinyScreen",
-                android.content.Context::class.java)
-            method.isAccessible = true
-            hook(method, replaceResult(false))
-            log("SystemUI: forced MiuiConfigs.isFlipTinyScreen → false")
-        }.onFailure { log("SystemUI: isFlipTinyScreen hook failed", it) }
-
-        // Fix 2: Replace Impl with Dummy so the panel doesn't intercept touches.
-        // The Dagger Provider.get() calls provideTinyKeyguardPanelViewController()
-        // which checks isFlipDevice(). Hook get() to always return the Dummy.
-        runCatching {
-            val factoryClass = param.classLoader.loadClass(
-                "com.android.systemui.shade.dagger.FlipKeyguardModule_ProvideTinyKeyguardPanelViewControllerFactory")
-            // Hook Provider.get() — this is the method Dagger calls to get the instance
-            val getMethod = factoryClass.getMethod("get")
-            hook(getMethod, after { _, result ->
-                val name = result?.javaClass?.name ?: ""
-                if (name.contains("Impl")) {
-                    log("SystemUI/LockScreen: replacing Impl with Dummy")
-                    param.classLoader.loadClass(
-                        "com.android.keyguard.tinyPanel.TinyKeyguardPanelViewControllerDummy")
-                        .getDeclaredConstructor().newInstance()
-                } else {
-                    result
-                }
-            })
-            log("SystemUI: hooked FlipKeyguardModule.get() → Dummy")
-        }.onFailure { log("SystemUI: FlipKeyguardModule hook failed", it) }
-    }
 
 }

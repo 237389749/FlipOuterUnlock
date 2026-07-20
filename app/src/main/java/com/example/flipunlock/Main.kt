@@ -13,6 +13,7 @@ import com.example.flipunlock.hook.ScreenTypeHook
 import com.example.flipunlock.hook.SystemUIHook
 import com.example.flipunlock.hook.gesture.GestureHook
 import com.example.flipunlock.hook.LauncherHook
+import com.example.flipunlock.hook.LockScreenHook
 import com.example.flipunlock.hook.system.AppBoundsHook
 import com.example.flipunlock.hook.system.CompatConfigHook
 import com.example.flipunlock.hook.system.DisplayStateHook
@@ -40,6 +41,7 @@ class Main : XposedModule() {
         SystemUIHook,
         GestureHook,  // v2: block fliphome InputMonitor → system gestures
         LauncherHook,  // block SpecialFDeviceGestureHelper → keep NavStubView on outer screen
+        LockScreenHook,  // fix lock screen: swipe, shortcuts, wallpaper on outer screen
 //        LauncherDensityHook,  // Not needed: state=6 already adapts launcher to outer screen
         SogouInputHook,
         ActivityLifecycleHook,
