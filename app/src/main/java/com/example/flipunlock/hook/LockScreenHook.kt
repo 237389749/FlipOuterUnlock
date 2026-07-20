@@ -129,39 +129,47 @@ object LockScreenHook : BaseHook() {
     //    Outer screen 371dp always matches default (compact 4-col layout).
     //    Hook updateResources() to override mResourceColumns after resource load.
     private fun hookControlCenterRelayout(param: PackageReadyParam) {
-        runCatching {
-            val cls = param.classLoader.loadClass(
-                "com.android.systemui.p037qs.MiuiTileLayout")
-            val method = cls.getDeclaredMethod("updateResources")
-            method.isAccessible = true
-            hook(method) { chain ->
-                val result = chain.proceed() as? Boolean ?: false
-                log("LockScreen: MiuiTileLayout.updateResources fired, cols before override")
-                // After resource load, force sw600dp column count (3 for portrait,
-                // 5 for landscape — matches large-screen layout)
-                val res = (chain.thisObject as? android.view.View)?.context?.resources
-                val orient = res?.configuration?.orientation ?: 0
-                val largeCols = if (orient == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 5 else 3
-                val colsField = cls.getDeclaredField("mResourceColumns")
-                colsField.isAccessible = true
-                val currentCols = colsField.getInt(chain.thisObject)
-                if (currentCols != largeCols) {
-                    colsField.setInt(chain.thisObject, largeCols)
-                    log("LockScreen: QS columns $currentCols → $largeCols")
-                    // Find updateColumns method (JADX artifact: updateColumns$1)
-                    val updateMethod = cls.declaredMethods.firstOrNull {
-                        it.name.startsWith("updateColumns") && it.parameterCount == 0
+        // Try both possible package names (JADX p037qs vs runtime qs)
+        val classNames = listOf(
+            "com.android.systemui.p037qs.MiuiTileLayout",
+            "com.android.systemui.qs.MiuiTileLayout")
+        var hooked = false
+        for (name in classNames) {
+            runCatching {
+                val cls = param.classLoader.loadClass(name)
+                log("LockScreen/QS: found class $name")
+                // Log all methods with "update" in name to find the right one
+                cls.declaredMethods.filter { it.name.contains("update", true) }
+                    .forEach { log("LockScreen/QS:   method: ${it.name}(${it.parameterTypes.joinToString()})") }
+                val method = cls.getDeclaredMethod("updateResources")
+                method.isAccessible = true
+                hook(method) { chain ->
+                    log("LockScreen/QS: updateResources() called on ${chain.thisObject.javaClass.name}")
+                    val result = chain.proceed() as? Boolean ?: false
+                    val res = (chain.thisObject as? android.view.View)?.context?.resources
+                    val orient = res?.configuration?.orientation ?: 0
+                    val largeCols = if (orient == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 5 else 3
+                    val colsField = cls.getDeclaredField("mResourceColumns")
+                    colsField.isAccessible = true
+                    val currentCols = colsField.getInt(chain.thisObject)
+                    log("LockScreen/QS: currentCols=$currentCols, target=$largeCols")
+                    if (currentCols != largeCols) {
+                        colsField.setInt(chain.thisObject, largeCols)
+                        val updateMethod = cls.declaredMethods.firstOrNull {
+                            it.name.startsWith("updateColumns") && it.parameterCount == 0
+                        }
+                        updateMethod?.apply { isAccessible = true; invoke(chain.thisObject) }
+                        (chain.thisObject as? android.view.View)?.requestLayout()
+                        log("LockScreen/QS: columns $currentCols → $largeCols")
                     }
-                    updateMethod?.apply {
-                        isAccessible = true
-                        invoke(chain.thisObject)
-                    }
-                    (chain.thisObject as? android.view.View)?.requestLayout()
+                    result
                 }
-                result
-            }
-            log("LockScreen: ✓ QS tile layout → large-screen columns")
-        }.onFailure { log("LockScreen: QS tile layout hook failed", it) }
+                log("LockScreen/QS: hooked $name.updateResources()")
+                hooked = true
+                break
+            }.onFailure { log("LockScreen/QS: $name not found: ${it.message}") }
+        }
+        if (!hooked) log("LockScreen/QS: FAILED — MiuiTileLayout not found in any package")
     }
 
     // D. Replace TinyKeyguardPanelViewControllerImpl with Dummy
