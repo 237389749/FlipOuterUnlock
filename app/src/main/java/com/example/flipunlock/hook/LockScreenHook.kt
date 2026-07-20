@@ -39,35 +39,11 @@ object LockScreenHook : BaseHook() {
     override fun setupHooks(param: PackageReadyParam) {
         log("LockScreenHook: loading for ${param.packageName}")
         safeHook("LockScreenHook") {
-            hookLargeScreenLayout(param)
             hookTinyScreen(param)
             hookFlipTinyScreen(param)
             hookInstantFlipTinyScreen(param)
             hookReplaceController(param)
         }
-    }
-
-    // A. Force smallestScreenWidthDp ≥ 600 for large-screen layout in SystemUI.
-    //    Control center, lock screen, etc. use this to decide compact vs expanded.
-    //    Only affects SystemUI process — apps run in their own processes.
-    private fun hookLargeScreenLayout(param: PackageReadyParam) {
-        runCatching {
-            val getConfigMethod = android.content.res.Resources::class.java
-                .getDeclaredMethod("getConfiguration")
-            getConfigMethod.isAccessible = true
-            hook(getConfigMethod) { chain ->
-                val config = chain.proceed() as? android.content.res.Configuration
-                    ?: return@hook chain.proceed()
-                if (config.smallestScreenWidthDp in 1..599) {
-                    val field = android.content.res.Configuration::class.java
-                        .getDeclaredField("smallestScreenWidthDp")
-                    field.isAccessible = true
-                    field.setInt(config, 600)
-                }
-                config
-            }
-            log("LockScreen: ✓ smallestScreenWidthDp → ≥600")
-        }.onFailure { log("LockScreen: smallestScreenWidthDp failed", it) }
     }
 
     // B. isTinyScreen + isFlipTinyScreen → false
