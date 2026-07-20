@@ -42,6 +42,7 @@ object LockScreenHook : BaseHook() {
             hookTinyScreen(param)
             hookFlipTinyScreen(param)
             hookInstantFlipTinyScreen(param)
+            hookControlCenterRelayout(param)
             hookReplaceController(param)
         }
     }
@@ -116,7 +117,36 @@ object LockScreenHook : BaseHook() {
         }.onFailure { log("LockScreen: sInstantAppConfig fix failed", it) }
     }
 
-    // C. Replace TinyKeyguardPanelViewControllerImpl with Dummy
+    // C. Force control center to re-read layout after our hooks.
+    //    isTinyScreen/isFlipTinyScreen hooks are in place, but the control
+    //    center may have initialized before them. Hook the header controller's
+    //    onScreenLayoutSizeChanged to trigger a refresh.
+    private fun hookControlCenterRelayout(param: PackageReadyParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "com.android.systemui.controlcenter.shade.ControlCenterHeaderController")
+            val method = cls.getDeclaredMethod("onScreenLayoutSizeChanged")
+            method.isAccessible = true
+            hook(method, before { _ ->
+                log("LockScreen: control center layout refresh triggered")
+            })
+            log("LockScreen: ✓ control center re-layout hook installed")
+        }.onFailure { log("LockScreen: control center re-layout failed", it) }
+
+        // Also force the notification header to update its resources
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "com.android.systemui.qs.MiuiNotificationHeaderView")
+            val method = cls.getDeclaredMethod("updateHeaderResources")
+            method.isAccessible = true
+            hook(method, before { _ ->
+                log("LockScreen: notification header resources refresh triggered")
+            })
+            log("LockScreen: ✓ notification header re-layout hook installed")
+        }.onFailure { log("LockScreen: notification header re-layout failed", it) }
+    }
+
+    // D. Replace TinyKeyguardPanelViewControllerImpl with Dummy
     //    The Impl sets up TouchHandler, wallpaper animations, and all panel logic.
     //    The Dummy is a no-op — panel view exists but does nothing.
     private fun hookReplaceController(param: PackageReadyParam) {
