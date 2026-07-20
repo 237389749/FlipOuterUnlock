@@ -123,33 +123,45 @@ object LockScreenHook : BaseHook() {
         }.onFailure { log("LockScreen: sInstantAppConfig fix failed", it) }
     }
 
-    // C. Force control center to re-read layout after our hooks.
-    //    isTinyScreen/isFlipTinyScreen hooks are in place, but the control
-    //    center may have initialized before them. Hook the header controller's
-    //    onScreenLayoutSizeChanged to trigger a refresh.
+    // C. Force control center to use large-screen tile layout.
+    //    Column count comes from resources.getInteger(quick_settings_num_columns):
+    //      default: 4 cols, sw600dp-port: 3 cols (larger tiles).
+    //    Outer screen 371dp always matches default (compact 4-col layout).
+    //    Hook updateResources() to override mResourceColumns after resource load.
     private fun hookControlCenterRelayout(param: PackageReadyParam) {
         runCatching {
             val cls = param.classLoader.loadClass(
-                "com.android.systemui.controlcenter.shade.ControlCenterHeaderController")
-            val method = cls.getDeclaredMethod("onScreenLayoutSizeChanged")
+                "com.android.systemui.qs.MiuiTileLayout")
+            val method = cls.getDeclaredMethod("updateResources")
             method.isAccessible = true
-            hook(method, before { _ ->
-                log("LockScreen: control center layout refresh triggered")
-            })
-            log("LockScreen: ✓ control center re-layout hook installed")
-        }.onFailure { log("LockScreen: control center re-layout failed", it) }
-
-        // Also force the notification header to update its resources
-        runCatching {
-            val cls = param.classLoader.loadClass(
-                "com.android.systemui.qs.MiuiNotificationHeaderView")
-            val method = cls.getDeclaredMethod("updateHeaderResources")
-            method.isAccessible = true
-            hook(method, before { _ ->
-                log("LockScreen: notification header resources refresh triggered")
-            })
-            log("LockScreen: ✓ notification header re-layout hook installed")
-        }.onFailure { log("LockScreen: notification header re-layout failed", it) }
+            hook(method) { chain ->
+                val result = chain.proceed() as? Boolean ?: false
+                // After resource load, force sw600dp column count (3 for portrait,
+                // 5 for landscape — matches large-screen layout)
+                val res = (chain.thisObject as? android.view.View)?.context?.resources
+                val isLandscape = res?.configuration?.orientation
+                    == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                val largeCols = if (isLandscape) 5 else 3
+                val colsField = cls.getDeclaredField("mResourceColumns")
+                colsField.isAccessible = true
+                val currentCols = colsField.getInt(chain.thisObject)
+                if (currentCols != largeCols) {
+                    colsField.setInt(chain.thisObject, largeCols)
+                    log("LockScreen: QS columns $currentCols → $largeCols")
+                    // Find updateColumns method (JADX artifact: updateColumns$1)
+                    val updateMethod = cls.declaredMethods.firstOrNull {
+                        it.name.startsWith("updateColumns") && it.parameterCount == 0
+                    }
+                    updateMethod?.apply {
+                        isAccessible = true
+                        invoke(chain.thisObject)
+                    }
+                    (chain.thisObject as? android.view.View)?.requestLayout()
+                }
+                result
+            }
+            log("LockScreen: ✓ QS tile layout → large-screen columns")
+        }.onFailure { log("LockScreen: QS tile layout hook failed", it) }
     }
 
     // D. Replace TinyKeyguardPanelViewControllerImpl with Dummy
