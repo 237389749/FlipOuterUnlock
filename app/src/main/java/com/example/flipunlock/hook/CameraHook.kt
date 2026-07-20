@@ -63,9 +63,10 @@ object CameraHook : BaseHook() {
                 runCatching {
                     val openMethod = cmClass.getDeclaredMethod("openCamera", *signature)
                     hook(openMethod, before { chain ->
+                        val cameraId = chain.args[0] as? String ?: return@before
+                        log("CameraHook: openCamera($cameraId) called")
                         if (!isOuterScreen()) return@before
                         ensureEnumerated(chain.thisObject as? CameraManager)
-                        val cameraId = chain.args[0] as? String ?: return@before
                         if (cameraId in frontCameraIds) {
                             val target = redirectTarget
                             if (target != null && target != cameraId) {
