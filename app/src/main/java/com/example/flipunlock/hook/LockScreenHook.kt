@@ -47,21 +47,18 @@ object LockScreenHook : BaseHook() {
         }
     }
 
-    // A. Force large-screen layout by overriding smallestScreenWidthDp.
-    //    The lock screen uses smallestScreenWidthDp >= 600 to decide between
-    //    large-screen (inner) and small-screen (outer) layout. Outer screen
-    //    1208×1392 @ 520dpi → 371dp, far below 600dp. Hook Resources to
-    //    report smallestScreenWidthDp ≥ 600 so lock screen uses large layout.
+    // A. Force smallestScreenWidthDp ≥ 600 for large-screen layout in SystemUI.
+    //    Control center, lock screen, etc. use this to decide compact vs expanded.
+    //    Only affects SystemUI process — apps run in their own processes.
     private fun hookLargeScreenLayout(param: PackageReadyParam) {
         runCatching {
-            val resClass = android.content.res.Resources::class.java
-            val getConfigMethod = resClass.getDeclaredMethod("getConfiguration")
+            val getConfigMethod = android.content.res.Resources::class.java
+                .getDeclaredMethod("getConfiguration")
             getConfigMethod.isAccessible = true
             hook(getConfigMethod) { chain ->
-                val config = (chain.proceed() as? android.content.res.Configuration)
+                val config = chain.proceed() as? android.content.res.Configuration
                     ?: return@hook chain.proceed()
-                if (config.smallestScreenWidthDp < 600) {
-                    // Force large-screen layout without modifying actual density
+                if (config.smallestScreenWidthDp in 1..599) {
                     val field = android.content.res.Configuration::class.java
                         .getDeclaredField("smallestScreenWidthDp")
                     field.isAccessible = true
@@ -69,8 +66,8 @@ object LockScreenHook : BaseHook() {
                 }
                 config
             }
-            log("LockScreen: ✓ smallestScreenWidthDp → ≥600 (large-screen layout)")
-        }.onFailure { log("LockScreen: smallestScreenWidthDp fix failed", it) }
+            log("LockScreen: ✓ smallestScreenWidthDp → ≥600")
+        }.onFailure { log("LockScreen: smallestScreenWidthDp failed", it) }
     }
 
     // B. isTinyScreen + isFlipTinyScreen → false
