@@ -57,8 +57,11 @@ object LockScreenHook : BaseHook() {
             val method = cls.getDeclaredMethod("isTinyScreen",
                 android.content.Context::class.java)
             method.isAccessible = true
-            hook(method, replaceResult(false))
-            log("LockScreen: ✓ isTinyScreen → false (inner-screen style)")
+            hook(method) { chain ->
+                log("LockScreen: isTinyScreen called → returning false")
+                false
+            }
+            log("LockScreen: ✓ isTinyScreen → false")
         }.onFailure { log("LockScreen: isTinyScreen failed", it) }
     }
 
@@ -68,7 +71,10 @@ object LockScreenHook : BaseHook() {
             val method = cls.getDeclaredMethod("isFlipTinyScreen",
                 android.content.Context::class.java)
             method.isAccessible = true
-            hook(method, replaceResult(false))
+            hook(method) { chain ->
+                log("LockScreen: isFlipTinyScreen called → returning false")
+                false
+            }
             log("LockScreen: ✓ isFlipTinyScreen → false")
         }.onFailure { log("LockScreen: isFlipTinyScreen failed", it) }
     }
