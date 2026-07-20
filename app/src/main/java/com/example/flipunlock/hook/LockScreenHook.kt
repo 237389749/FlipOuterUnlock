@@ -103,8 +103,12 @@ object LockScreenHook : BaseHook() {
                     "com.miui.utils.configs.MiuiConfigs")
                 val field = configClass.getDeclaredField("sInstantAppConfig")
                 field.isAccessible = true
-                val config = field.get(null) as? android.content.res.Configuration
-                config?.screenType = 0
+                val config = field.get(null) ?: return@after
+                // Use reflection — screenType is a MIUI-injected field on Configuration
+                val stField = android.content.res.Configuration::class.java
+                    .getDeclaredField("screenType")
+                stField.isAccessible = true
+                stField.setInt(config, 0)
             })
             log("LockScreen: ✓ sInstantAppConfig.screenType → 0 after config change")
         }.onFailure { log("LockScreen: sInstantAppConfig fix failed", it) }
