@@ -139,9 +139,8 @@ object LockScreenHook : BaseHook() {
                 // After resource load, force sw600dp column count (3 for portrait,
                 // 5 for landscape — matches large-screen layout)
                 val res = (chain.thisObject as? android.view.View)?.context?.resources
-                val isLandscape = res?.configuration?.orientation
-                    == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-                val largeCols = if (isLandscape) 5 else 3
+                val orient = res?.configuration?.orientation ?: 0
+                val largeCols = if (orient == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 5 else 3
                 val colsField = cls.getDeclaredField("mResourceColumns")
                 colsField.isAccessible = true
                 val currentCols = colsField.getInt(chain.thisObject)
