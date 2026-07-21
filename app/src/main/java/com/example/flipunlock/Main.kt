@@ -2,6 +2,7 @@ package com.example.flipunlock
 
 import com.example.flipunlock.hook.ActivityLifecycleHook
 import com.example.flipunlock.hook.util.log
+import com.example.flipunlock.hook.util.Config
 //import com.example.flipunlock.hook.LauncherDensityHook  // TODO: density tweak not working
 import com.example.flipunlock.hook.SogouInputHook
 import com.example.flipunlock.hook.AodHook
@@ -50,6 +51,7 @@ class Main : XposedModule() {
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
         module = this
+        Config.logConfig()
     }
 
     override fun onSystemServerStarting(param: SystemServerStartingParam) {
