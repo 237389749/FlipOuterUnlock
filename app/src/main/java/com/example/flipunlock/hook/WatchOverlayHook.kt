@@ -21,12 +21,18 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  *           └── FlipWidgetManager → FlipMaMlHostView / widget pages
  *   Foreground app change → refreshWindow(ADD) → wm.addView(groupView) → appears
  *
- * Multi-layer defense (root → leaf):
- *   Layer 0: getWatchOverlayWindow() → null  ← ROOT: all callers skip widget logic
+ * Multi-layer defense:
  *   Layer 1: CheckAppConfigRunnable → force hide decision
  *   Layer 2: WatchOverlayGroupView → GONE, NOT_TOUCHABLE, no touch events
  *   Layer 3: WatchOverlayWindow → ADD→REMOVE, InputMonitor→false
  *   Layer 4: WindowManager.addView → intercept and block entirely
+ *
+ * Note: NOT hooking getWatchOverlayWindow() -> null.
+ * Returns null causes internal state inconsistency — WatchOverlayWindow
+ * is already constructed with inflated layout and registered observers,
+ * but null return makes callers skip lifecycle management. This leaves
+ * the widget in an unmanaged state, consuming layout space without
+ * proper cleanup, and breaks gesture callback chains.
  */
 object WatchOverlayHook : BaseHook() {
     override val targetPackages = listOf("com.miui.fliphome")
@@ -34,30 +40,10 @@ object WatchOverlayHook : BaseHook() {
     override fun setupHooks(param: PackageReadyParam) {
         if (!Config.uiWidget) { log("WatchOverlayHook: DISABLED by persist.flipunlock.ui.widget"); return }
         log("WatchOverlayHook: loading for ${param.packageName}")
-        hookGetWatchOverlayWindow(param)       // Layer 0: root
         hookCheckAppConfigRunnable(param)       // Layer 1: controller
         hookWatchOverlayGroupView(param)        // Layer 2: view
         hookWatchOverlayWindow(param)           // Layer 3: window
         hookWindowManagerAddView()             // Layer 4: ultimate
-    }
-
-    // ========== Layer 0: Root — getWatchOverlayWindow() → null ==========
-    // All callers go through FlipApplication.getInstance().getWatchOverlayWindow():
-    //   FlipLauncherFragment: setUnlockState
-    //   FlipLauncher: setLifecycleRegistry
-    //   OverviewState: show/hide widget
-    //   GestureModeHome/App: onGestureState callbacks
-    //   GestureInputHelper: onInputMonitorEvent → widget touch forwarding
-    //
-    // Returning null makes every caller skip all widget logic.
-    private fun hookGetWatchOverlayWindow(param: PackageReadyParam) {
-        runCatching {
-            val cls = param.classLoader.loadClass("com.miui.fliphome.FlipApplication")
-            val method = cls.getDeclaredMethod("getWatchOverlayWindow")
-            method.isAccessible = true
-            hook(method, replaceResult(null))
-            log("WatchOverlay: getWatchOverlayWindow → null (ROOT)")
-        }.onFailure { log("WatchOverlay: getWatchOverlayWindow failed", it) }
     }
 
     // ========== Layer 1: Controller — force hide window ==========
