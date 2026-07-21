@@ -33,7 +33,6 @@ object LauncherHook : BaseHook() {
             hookStartRecentsAnimationPre(param)
             hookIsDefaultHome(param)
             hookDisableHomeRecents(param)
-            hookDiagnostic(param)
         }
     }
 
@@ -73,18 +72,29 @@ object LauncherHook : BaseHook() {
             method.isAccessible = true
             val hideField = navClass.getDeclaredField("mHideGestureLine")
             hideField.isAccessible = true
+            val listenerField = navClass.getDeclaredField("mRecentsAnimationListenerImpl")
+            listenerField.isAccessible = true
 
             hook(method) { chain ->
-                val orig = hideField.getBoolean(chain.thisObject)
+                val obj = chain.thisObject
+                val orig = hideField.getBoolean(obj)
                 if (orig) {
-                    hideField.setBoolean(chain.thisObject, false)
-                    log("LauncherHook: startRecentsAnimationPre — forced mHideGestureLine=false")
+                    hideField.setBoolean(obj, false)
+                }
+                // Clear stuck recents animation listener (state=1 blocks subsequent gestures)
+                val listener = listenerField.get(obj)
+                if (listener != null) {
+                    val state = runCatching { listener.javaClass.getDeclaredMethod("getState").invoke(listener) as? Int }.getOrNull()
+                    if (state == 1) {
+                        listenerField.set(obj, null)
+                        log("LauncherHook: startRecentsAnimationPre — cleared stuck listener (state=$state)")
+                    }
                 }
                 try {
                     chain.proceed()
                 } finally {
                     if (orig) {
-                        hideField.setBoolean(chain.thisObject, true)
+                        hideField.setBoolean(obj, true)
                     }
                 }
             }
@@ -152,65 +162,4 @@ object LauncherHook : BaseHook() {
         }.onFailure { log("LauncherHook: onSystemUiFlagsChanged failed", it) }
     }
 
-    /**
-     * DIAGNOSTIC: hook onComputeInternalInsets → log region + force it active.
-     * Also hook onPointerEvent → log if touches arrive.
-     * Remove after confirming touch routing.
-     */
-    private fun hookDiagnostic(param: PackageReadyParam) {
-        runCatching {
-            val navClass = param.classLoader.loadClass("com.miui.home.recents.NavStubView")
-
-            // Find the TouchableRegionCompat.OnComputeInternalInsetsListener implementation
-            // inside NavStubView — the anonymous class at line ~1125-1145.
-            // Hook each method differently: find the field that holds the listener.
-            val fields = navClass.declaredFields
-            var listenerField: java.lang.reflect.Field? = null
-            var listenerObj: Any? = null
-            for (f in fields) {
-                f.isAccessible = true
-                val v = f.get(null) // static field
-                if (v != null && v.javaClass.name.contains("OnComputeInternalInsetsListener")) {
-                    listenerField = f
-                    listenerObj = v
-                    break
-                }
-            }
-            // Try instance field approach
-            if (listenerObj == null) {
-                for (f in fields) {
-                    if (f.name.contains("Insets") || f.name.contains("Touchable") || f.name.contains("touchable")) {
-                        log("DIAG: NavStubView field ${f.name} type=${f.type.name}")
-                    }
-                }
-            }
-
-            // Simpler: just hook the helper method that sets the region.
-            // The actual onComputeInternalInsets sets region via the InsetsListener.
-            // Hook shouldUseEmptyTouchableRegion to log and force false.
-            val shouldUseMethod = navClass.getDeclaredMethod("shouldUseEmptyTouchableRegion")
-            shouldUseMethod.isAccessible = true
-            hook(shouldUseMethod) { chain ->
-                val result = chain.proceed() as? Boolean ?: false
-                log("DIAG: shouldUseEmptyTouchableRegion → $result (keepHidden=${chain.thisObject.getField("mKeepHidden")} disableTouch=${chain.thisObject.getField("mDisableTouch")} disableHomeRecents=${chain.thisObject.getField("mDisableHomeRecents")})")
-                false // force never empty
-            }
-            log("LauncherHook: DIAG hooked shouldUseEmptyTouchableRegion")
-
-            // Also hook onTouchEvent to see if View-level touches arrive
-            runCatching {
-                val touchMethod = navClass.getDeclaredMethod("onTouchEvent",
-                    android.view.MotionEvent::class.java)
-                touchMethod.isAccessible = true
-                hook(touchMethod, before { chain ->
-                    val ev = chain.args[0] as? android.view.MotionEvent
-                    val action = ev?.actionMasked ?: -1
-                    if (action == 0 || action == 1) {
-                        log("DIAG: onTouchEvent action=$action rawX=${ev?.rawX} rawY=${ev?.rawY}")
-                    }
-                })
-                log("LauncherHook: DIAG hooked onTouchEvent")
-            }.onFailure { log("LauncherHook: DIAG onTouchEvent failed", it) }
-        }.onFailure { log("LauncherHook: DIAG failed", it) }
-    }
 }
