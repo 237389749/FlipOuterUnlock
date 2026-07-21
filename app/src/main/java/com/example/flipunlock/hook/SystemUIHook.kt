@@ -193,7 +193,7 @@ object SystemUIHook : BaseHook() {
             stField.isAccessible = true
             hook(method) { chain ->
                 val config = chain.args[0] as? android.content.res.Configuration
-                val orig = config?.screenType ?: -1
+                val orig = if (config != null) stField.getInt(config) else -1
                 if (orig == 1) {
                     stField.setInt(config, 0)  // fool screenType == 1 check
                 }
