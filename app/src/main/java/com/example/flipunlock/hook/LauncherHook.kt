@@ -32,6 +32,7 @@ object LauncherHook : BaseHook() {
             hookSpecialFDeviceFoldedMode(param)
             hookStartRecentsAnimationPre(param)
             hookIsDefaultHome(param)
+            hookDisableHomeRecents(param)
         }
     }
 
@@ -111,5 +112,42 @@ object LauncherHook : BaseHook() {
             hook(method, replaceResult(true))
             log("LauncherHook: getIsUseMiuiHomeAsDefaultHome → true")
         }.onFailure { log("LauncherHook: getIsUseMiuiHomeAsDefaultHome failed", it) }
+    }
+
+    /**
+     * Hook NavStubView.onSystemUiFlagsChanged() → force mDisableHomeRecents=false.
+     *
+     * When switching from launcher to an app, SystemUI sends flags that may
+     * set mDisableHomeRecents=true (line 1516-1520):
+     *   boolean z3 = isHomeDisabled() && isOverviewDisabled();
+     *   this.mDisableHomeRecents = z3;
+     *   this.mUseEmptyTouchableRegion = shouldUseEmptyTouchableRegion();
+     *
+     * This makes the touch region empty → bottom gestures stop working in apps.
+     * Force both fields false after the original method runs.
+     */
+    private fun hookDisableHomeRecents(param: PackageReadyParam) {
+        runCatching {
+            val navClass = param.classLoader.loadClass(
+                "com.miui.home.recents.NavStubView")
+            val method = navClass.getDeclaredMethod("onSystemUiFlagsChanged",
+                Long::class.javaPrimitiveType!!)
+            method.isAccessible = true
+            val disableField = navClass.getDeclaredField("mDisableHomeRecents")
+            disableField.isAccessible = true
+            val emptyField = navClass.getDeclaredField("mUseEmptyTouchableRegion")
+            emptyField.isAccessible = true
+
+            hook(method, after { chain, result ->
+                val obj = chain.thisObject
+                if (disableField.getBoolean(obj)) {
+                    disableField.setBoolean(obj, false)
+                    emptyField.setBoolean(obj, false)
+                    log("LauncherHook: onSystemUiFlagsChanged → forced mDisableHomeRecents=false")
+                }
+                result
+            })
+            log("LauncherHook: hooked onSystemUiFlagsChanged (disableHomeRecents guard)")
+        }.onFailure { log("LauncherHook: onSystemUiFlagsChanged failed", it) }
     }
 }
