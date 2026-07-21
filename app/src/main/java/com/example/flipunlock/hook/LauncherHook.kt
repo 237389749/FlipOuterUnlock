@@ -33,6 +33,7 @@ object LauncherHook : BaseHook() {
             hookStartRecentsAnimationPre(param)
             hookIsDefaultHome(param)
             hookDisableHomeRecents(param)
+            hookDiagnostic(param)
         }
     }
 
@@ -149,5 +150,28 @@ object LauncherHook : BaseHook() {
             })
             log("LauncherHook: hooked onSystemUiFlagsChanged (disableHomeRecents guard)")
         }.onFailure { log("LauncherHook: onSystemUiFlagsChanged failed", it) }
+    }
+
+    /**
+     * DIAGNOSTIC: hook onPointerEvent + onSystemUiFlagsChanged → log touch events.
+     * Remove after confirming touch routing.
+     */
+    private fun hookDiagnostic(param: PackageReadyParam) {
+        runCatching {
+            val navClass = param.classLoader.loadClass("com.miui.home.recents.NavStubView")
+
+            // Log every onPointerEvent call to confirm touches reach NavStubView
+            val ptrMethod = navClass.getDeclaredMethod("onPointerEvent",
+                android.view.MotionEvent::class.java)
+            ptrMethod.isAccessible = true
+            hook(ptrMethod, before { chain ->
+                val ev = chain.args[0] as? android.view.MotionEvent
+                val action = ev?.actionMasked ?: -1
+                if (action == 0 || action == 1) { // DOWN or UP only
+                    log("DIAG: onPointerEvent action=$action rawX=${ev?.rawX} rawY=${ev?.rawY}")
+                }
+            })
+            log("LauncherHook: DIAG hooked onPointerEvent")
+        }.onFailure { log("LauncherHook: DIAG onPointerEvent failed", it) }
     }
 }
