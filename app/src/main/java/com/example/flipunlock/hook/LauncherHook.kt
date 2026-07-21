@@ -6,23 +6,21 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 /**
  * Fix miuihome inner launcher gesture navigation on the outer screen (state=6).
  *
- * NavStubView provides the bottom touch area (onComputeInternalInsets) that
- * intercepts touches at the bottom of the screen for Home/Recents gestures.
- * Back gestures are handled separately by fliphome's GestureStubView.
+ * Three issues prevent bottom gestures (Home/Recents) from working:
  *
- * Two issues prevent bottom gestures from working:
+ * 1. SpecialFDeviceGestureHelper detects physical fold → removes NavStubView.
+ *    Fix: isInSFDeviceFoldedMode() → false.
  *
- * 1. SpecialFDeviceGestureHelper.isInSFDeviceFoldedMode() → true
- *    Causes NavStubView to be removed. Fix: → false.
+ * 2. NavStubView.startRecentsAnimationPre() returns when mHideGestureLine=true.
+ *    Fix: force mHideGestureLine=false before the check.
  *
- * 2. NavStubView.startRecentsAnimationPre() returns immediately when
- *    mHideGestureLine=true (line 3105). This is the normal state for
- *    full-screen gesture mode — TouchInteractionService should handle
- *    gestures instead. But TouchInteractionService doesn't work on the
- *    flip outer screen, leaving bottom gestures unhandled.
- *
- *    Fix: hook startRecentsAnimationPre() to force mHideGestureLine=false
- *    before the check, so NavStubView processes the recents transition.
+ * 3. mIsUseMiuiHomeAsDefaultHome=false because com.miui.fliphome is the flip's
+ *    default home (we disabled FlipLauncher, making miuihome the actual launcher
+ *    but NOT the system's default home app).
+ *    When false: NavStubView is removed onExpand, NavStubView is not created
+ *    in addFsgGestureWindow, isUseLauncherRecentsAndFsGesture→false, and
+ *    NavStubGestureEventManager blocks actions with "third home mode".
+ *    Fix: getIsUseMiuiHomeAsDefaultHome() → true.
  */
 object LauncherHook : BaseHook() {
     override val targetPackages = listOf("com.miui.home")
@@ -32,6 +30,7 @@ object LauncherHook : BaseHook() {
         safeHook("LauncherHook") {
             hookSpecialFDeviceFoldedMode(param)
             hookStartRecentsAnimationPre(param)
+            hookIsDefaultHome(param)
         }
     }
 
@@ -88,5 +87,28 @@ object LauncherHook : BaseHook() {
             }
             log("LauncherHook: hooked startRecentsAnimationPre")
         }.onFailure { log("LauncherHook: startRecentsAnimationPre failed", it) }
+    }
+
+    /**
+     * Hook BaseRecentsImpl.getIsUseMiuiHomeAsDefaultHome() → true.
+     *
+     * This is the ROOT GATE for gesture functionality in miuihome:
+     *
+     * Line 454: onExpand → removeNavStubView() if !mIsUseMiuiHomeAsDefaultHome
+     * Line 629: addFsgGestureWindow → skip createAndAddNavStubView if false
+     * Line 637: isUseLauncherRecentsAndFsGesture() returns this value
+     *
+     * By forcing true, miuihome's gesture system fully trusts itself to
+     * handle Home/Recents transitions regardless of system default home setting.
+     */
+    private fun hookIsDefaultHome(param: PackageReadyParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "com.miui.home.recents.BaseRecentsImpl")
+            val method = cls.getDeclaredMethod("getIsUseMiuiHomeAsDefaultHome")
+            method.isAccessible = true
+            hook(method, replaceResult(true))
+            log("LauncherHook: getIsUseMiuiHomeAsDefaultHome → true")
+        }.onFailure { log("LauncherHook: getIsUseMiuiHomeAsDefaultHome failed", it) }
     }
 }
