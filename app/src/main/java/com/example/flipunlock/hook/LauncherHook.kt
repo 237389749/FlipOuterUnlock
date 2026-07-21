@@ -153,25 +153,64 @@ object LauncherHook : BaseHook() {
     }
 
     /**
-     * DIAGNOSTIC: hook onPointerEvent + onSystemUiFlagsChanged → log touch events.
+     * DIAGNOSTIC: hook onComputeInternalInsets → log region + force it active.
+     * Also hook onPointerEvent → log if touches arrive.
      * Remove after confirming touch routing.
      */
     private fun hookDiagnostic(param: PackageReadyParam) {
         runCatching {
             val navClass = param.classLoader.loadClass("com.miui.home.recents.NavStubView")
 
-            // Log every onPointerEvent call to confirm touches reach NavStubView
-            val ptrMethod = navClass.getDeclaredMethod("onPointerEvent",
-                android.view.MotionEvent::class.java)
-            ptrMethod.isAccessible = true
-            hook(ptrMethod, before { chain ->
-                val ev = chain.args[0] as? android.view.MotionEvent
-                val action = ev?.actionMasked ?: -1
-                if (action == 0 || action == 1) { // DOWN or UP only
-                    log("DIAG: onPointerEvent action=$action rawX=${ev?.rawX} rawY=${ev?.rawY}")
+            // Find the TouchableRegionCompat.OnComputeInternalInsetsListener implementation
+            // inside NavStubView — the anonymous class at line ~1125-1145.
+            // Hook each method differently: find the field that holds the listener.
+            val fields = navClass.declaredFields
+            var listenerField: java.lang.reflect.Field? = null
+            var listenerObj: Any? = null
+            for (f in fields) {
+                f.isAccessible = true
+                val v = f.get(null) // static field
+                if (v != null && v.javaClass.name.contains("OnComputeInternalInsetsListener")) {
+                    listenerField = f
+                    listenerObj = v
+                    break
                 }
-            })
-            log("LauncherHook: DIAG hooked onPointerEvent")
-        }.onFailure { log("LauncherHook: DIAG onPointerEvent failed", it) }
+            }
+            // Try instance field approach
+            if (listenerObj == null) {
+                for (f in fields) {
+                    if (f.name.contains("Insets") || f.name.contains("Touchable") || f.name.contains("touchable")) {
+                        log("DIAG: NavStubView field ${f.name} type=${f.type.name}")
+                    }
+                }
+            }
+
+            // Simpler: just hook the helper method that sets the region.
+            // The actual onComputeInternalInsets sets region via the InsetsListener.
+            // Hook shouldUseEmptyTouchableRegion to log and force false.
+            val shouldUseMethod = navClass.getDeclaredMethod("shouldUseEmptyTouchableRegion")
+            shouldUseMethod.isAccessible = true
+            hook(shouldUseMethod) { chain ->
+                val result = chain.proceed() as? Boolean ?: false
+                log("DIAG: shouldUseEmptyTouchableRegion → $result (keepHidden=${chain.thisObject.getField("mKeepHidden")} disableTouch=${chain.thisObject.getField("mDisableTouch")} disableHomeRecents=${chain.thisObject.getField("mDisableHomeRecents")})")
+                false // force never empty
+            }
+            log("LauncherHook: DIAG hooked shouldUseEmptyTouchableRegion")
+
+            // Also hook onTouchEvent to see if View-level touches arrive
+            runCatching {
+                val touchMethod = navClass.getDeclaredMethod("onTouchEvent",
+                    android.view.MotionEvent::class.java)
+                touchMethod.isAccessible = true
+                hook(touchMethod, before { chain ->
+                    val ev = chain.args[0] as? android.view.MotionEvent
+                    val action = ev?.actionMasked ?: -1
+                    if (action == 0 || action == 1) {
+                        log("DIAG: onTouchEvent action=$action rawX=${ev?.rawX} rawY=${ev?.rawY}")
+                    }
+                })
+                log("LauncherHook: DIAG hooked onTouchEvent")
+            }.onFailure { log("LauncherHook: DIAG onTouchEvent failed", it) }
+        }.onFailure { log("LauncherHook: DIAG failed", it) }
     }
 }
