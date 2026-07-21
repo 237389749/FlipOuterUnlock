@@ -93,7 +93,7 @@ object WatchOverlayHook : BaseHook() {
                 constructor.isAccessible = true
                 hook(constructor, after { chain, result ->
                     val view = chain.thisObject as? View ?: return@after result
-                    setNotTouchableAndGone(view)
+                    disableGroupView(view)
                     log("WatchOverlay: constructor → GONE & NOT_TOUCHABLE")
                     result
                 })
@@ -104,7 +104,7 @@ object WatchOverlayHook : BaseHook() {
                 val initMethod = clazz.method("init")
                 hook(initMethod, after { chain, result ->
                     val view = chain.thisObject as? View ?: return@after result
-                    setNotTouchableAndGone(view)
+                    disableGroupView(view)
                     runCatching {
                         val pager = view.getField("mPagerView") as? View
                         pager?.alpha = 0.0f
@@ -141,32 +141,21 @@ object WatchOverlayHook : BaseHook() {
                 })
             }
 
-            // updateLayoutByOrientation: force removal
+            // updateLayoutByOrientation: prevent re-show
             runCatching {
                 val updateMethod = clazz.method("updateLayoutByOrientation", Int::class.javaPrimitiveType!!)
                 hook(updateMethod, Hooker { chain ->
-                    val view = chain.thisObject as? View
-                    if (view != null) {
-                        view.visibility = View.GONE
-                        runCatching {
-                            if (view.parent != null) {
-                                val wm = view.context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-                                wm.removeViewImmediate(view)
-                                log("WatchOverlay: updateLayoutByOrientation → removed")
-                            }
-                        }
-                    }
+                    disableGroupView(chain.thisObject as? View ?: return@Hooker chain.proceed())
                     null
                 })
             }
 
-            // onAttachedToWindow: force removal
+            // onAttachedToWindow: force removal immediately
             runCatching {
                 val attachMethod = clazz.method("onAttachedToWindow")
                 hook(attachMethod, after { chain, result ->
                     val view = chain.thisObject as? View ?: return@after result
-                    view.visibility = View.GONE
-                    setNotTouchableAndGone(view)
+                    disableGroupView(view)
                     runCatching {
                         val wm = view.context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
                         wm.removeViewImmediate(view)
@@ -232,13 +221,29 @@ object WatchOverlayHook : BaseHook() {
     }
 
     // ========== Helper ==========
-    private fun setNotTouchableAndGone(view: View) {
+    private fun disableGroupView(view: View) {
+        // Set visibility first (always works regardless of attach state)
+        view.visibility = View.GONE
+        // Modify layout params: when the view IS later added to WM, it will be
+        // NOT_TOUCHABLE and 1×1 (no layout space consumed). Using setLayoutParams
+        // directly works pre-attach; updateViewLayout only works post-attach.
         runCatching {
             val lp = view.layoutParams as? WindowManager.LayoutParams ?: return
+            lp.width = 1
+            lp.height = 1
             lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-            val wm = view.context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            wm.updateViewLayout(view, lp)
-            view.visibility = View.GONE
-        }.onFailure { log("WatchOverlay: setNotTouchableAndGone error", it) }
+            // Also zero out the per-rotation params used by WatchOverlayGroupView
+            runCatching {
+                val field = WindowManager.LayoutParams::class.java.getDeclaredField("paramsForRotation")
+                field.isAccessible = true
+                val rotationParams = field.get(lp) as? Array<WindowManager.LayoutParams>
+                if (rotationParams != null) {
+                    for (rp in rotationParams) {
+                        rp.width = 1
+                        rp.height = 1
+                    }
+                }
+            }
+        }
     }
 }
