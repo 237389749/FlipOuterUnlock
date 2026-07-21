@@ -106,17 +106,22 @@ object Config {
     }
 
     private fun raw(key: String, default: Boolean): Boolean {
-        val v = readProp(key) ?: return default
-        return v == "true" || v == "1"
-    }
-
-    private fun readProp(key: String): String? {
         return try {
             Class.forName("android.os.SystemProperties")
-                .getDeclaredMethod("get", String::class.java)
-                .invoke(null, key) as? String
+                .getDeclaredMethod("getBoolean", String::class.java, Boolean::class.javaPrimitiveType!!)
+                .invoke(null, key, default) as? Boolean ?: default
         } catch (_: Exception) {
-            null
+            default
+        }
+    }
+
+    private fun readProp(key: String): String {
+        return try {
+            Class.forName("android.os.SystemProperties")
+                .getDeclaredMethod("get", String::class.java, String::class.java)
+                .invoke(null, key, "") as? String ?: ""
+        } catch (_: Exception) {
+            ""
         }
     }
 }
