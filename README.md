@@ -49,16 +49,49 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 - Notification menu fix — restores long-press menu via `isTinyScreen` scope faking
 - Status bar clock hidden on outer screen
 - Status bar icon expansion — shows up to 8 notification icons
-- System gestures enabled — blocks fliphome InputMonitor, prevents miuihome NavStubView removal
+- System gestures (back) — blocks fliphome FlipLauncher, keeps GestureStubView edge back
+- System gestures (home/recents) — fixes miuihome NavStubView 3-gate: fold removal, hideGestureLine, default-home check
 - Always-On Display enabled on outer screen when folded (v2.3 — screen state fix)
 - Front camera redirect to main back camera (v2 — dynamic LENS_FACING enumeration)
 - Sub-screen double-tap + 3-finger swipe gestures (displayId fix for state=6)
+- Feature toggles — SystemProperties-based, reboot-required, no UI
+
+### Feature Toggles
+
+All features can be disabled via `setprop`. Changes take effect after reboot. No UI — by design.
+
+```bash
+# List current settings
+getprop | grep persist.flipunlock
+
+# Disable a feature (example)
+setprop persist.flipunlock.ui.widget false
+reboot
+
+# Re-enable
+setprop persist.flipunlock.ui.widget true
+reboot
+```
+
+| Property | Default | Controls |
+|----------|---------|----------|
+| `persist.flipunlock.enable` | true | **Master kill switch** — false disables everything |
+| `persist.flipunlock.display.dual` | true | Dual display (DisplayStateHook: force state=6, display enable) |
+| `persist.flipunlock.display.aod` | true | Outer screen AOD |
+| `persist.flipunlock.display.cutout` | true | Remove cutout + letterbox + appBounds + lifecycle |
+| `persist.flipunlock.gesture.home` | true | Bottom gestures: home/recents (LauncherHook) |
+| `persist.flipunlock.gesture.back` | true | Back gestures: disable FlipLauncher (GestureHook) |
+| `persist.flipunlock.ui.lockscreen` | true | Lock screen large layout (LockScreenHook) |
+| `persist.flipunlock.ui.widget` | true | Disable widget overlay (WatchOverlayHook) |
+| `persist.flipunlock.ime` | true | Input method freedom (InputMethodHook + Sogou) |
+
+**Coupling**: `gesture.home` and `gesture.back` should be kept together (both ON or both OFF). `display.aod` depends on `display.dual`. Module logs warnings at startup if mismatched. `display.cutout`, `ui.widget`, `ime` are independent.
 
 ### Hook Architecture
 
 ```
 onSystemServerStarting (system_server):
-├── DisplayStateHook          → dual-state: display=DUAL(6) + app=OPENED
+├── DisplayStateHook          → dual display + enable guard + AOD power
 ├── CutoutHook.hookFramework  → Display.getCutout + Parser
 ├── LetterboxHook             → isLetterboxedForDisplayCutout → false
 ├── WhitelistHook             → ContinuityPolicyService dump
@@ -73,12 +106,13 @@ onPackageReady:
 ├── DeviceIdentityHook [* excl. SystemUI, Sogou] → isFlipDevice + 6 static fields
 ├── ScreenTypeHook [*]          → getScreenType → 0 (EXPAND)
 ├── AodHook [systemui, aod]     → v2.3: screen state fix + FlipLinkageStyleController
-├── CameraHook [camera]         → v2: dynamic LENS_FACING enumeration
+├── CameraHook [camera]         → v2: dynamic LENS_FACING enumeration (disabled)
 ├── CutoutHook [systemui, aod, camera]
-├── SystemUIHook [systemui]     → widget, notification, clock, icons
-├── GestureHook [fliphome]      → v2: block InputMonitor → system gestures
-├── LauncherHook [miui.home]    → block SpecialFDeviceGestureHelper → keep NavStubView
-├── WatchOverlayHook [fliphome] → 4-layer widget defense
+├── SystemUIHook [systemui]     → widget decor, notification, clock, icons, NavigationBar force
+├── GestureHook [fliphome]      → disable FlipLauncher + block start pages
+├── LauncherHook [miui.home]    → 3-gate NavStubView fix: fold + hideLine + defaultHome
+├── LockScreenHook [systemui]   → lock screen large layout: isTinyScreen/FlipTinyScreen/Instant toggles
+├── WatchOverlayHook [fliphome] → 5-layer widget defense: root getWatchOverlay()→null + 4 layers
 ├── SogouInputHook [sogou]      → toolbar + clipboard (DexKit)
 └── ActivityLifecycleHook [*]   → layoutInDisplayCutoutMode=ALWAYS
 ```
@@ -169,10 +203,43 @@ AGPL-3.0
 - 通知菜单修复
 - 外屏状态栏时钟隐藏
 - 通知图标扩展到 8 个
-- 系统手势启用 — 阻止 fliphome InputMonitor + 防止 miuihome NavStubView 移除
+- 系统手势（返回） — 禁用 fliphome FlipLauncher，保留 GestureStubView 边缘返回
+- 系统手势（Home/Recents） — 修复 miuihome NavStubView 三道门控：折叠移除、hideGestureLine、默认桌面检查
 - 折叠状态下外屏 AOD 启用（v2.3 — 屏幕状态修复）
 - 前置摄像头重定向到主后摄（v2 — 动态 LENS_FACING 枚举）
 - 外屏双击休眠 + 三指截屏手势（displayId 修复适配 state=6）
+- 功能开关 — 基于 SystemProperties，重启生效，无界面
+
+### 功能开关
+
+所有功能可通过 `setprop` 单独关闭。修改后重启生效。无 UI — 有意为之。
+
+```bash
+# 查看当前设置
+getprop | grep persist.flipunlock
+
+# 关闭某个功能（示例）
+setprop persist.flipunlock.ui.widget false
+reboot
+
+# 重新开启
+setprop persist.flipunlock.ui.widget true
+reboot
+```
+
+| 属性 | 默认 | 控制 |
+|------|------|------|
+| `persist.flipunlock.enable` | true | **总开关** — false 则全部关闭 |
+| `persist.flipunlock.display.dual` | true | 双屏显示（DisplayStateHook：强制 state=6，display enable） |
+| `persist.flipunlock.display.aod` | true | 外屏 AOD |
+| `persist.flipunlock.display.cutout` | true | 去除挖孔 + letterbox + appBounds + lifecycle |
+| `persist.flipunlock.gesture.home` | true | 底部手势 Home/Recents（LauncherHook） |
+| `persist.flipunlock.gesture.back` | true | 返回手势（GestureHook：禁用 FlipLauncher） |
+| `persist.flipunlock.ui.lockscreen` | true | 锁屏大屏样式（LockScreenHook） |
+| `persist.flipunlock.ui.widget` | true | 禁用外屏小部件（WatchOverlayHook） |
+| `persist.flipunlock.ime` | true | 输入法自由切换（InputMethodHook + Sogou） |
+
+**耦合**：`gesture.home` 与 `gesture.back` 建议保持同开同关。`display.aod` 依赖 `display.dual`。模块启动时若有冲突会打印 `⚠` 警告。`display.cutout`、`ui.widget`、`ime` 三者独立。
 
 ### 要求
 
