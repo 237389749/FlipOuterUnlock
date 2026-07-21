@@ -39,6 +39,8 @@ object DisplayStateHook {
             hookDisplayLayoutGet(param)
             hookAppLayerToUnfolded(param)
             hookDisplayInfoForStateToClosed(param)
+            hookDisplayEnabledLocked(param)
+            hookExternalDisplayDisable(param)
             hookAodOuterScreen(param)
         }
     }
@@ -145,7 +147,55 @@ object DisplayStateHook {
         }.onFailure { log("DisplayState: failed hook getDisplayInfoForStateLocked", it) }
     }
 
-    // ── 4. AOD on outer screen: prevent sleep + block dream timeouts ───
+    // ── 4. Defense-in-depth: force all displays enabled ──────────────────
+    //    DeviceStateToLayoutMap.get() → state=6 already enables both displays
+    //    via the layout. These hooks prevent any OTHER code path from disabling
+    //    a display at a lower level.
+
+    // 4a. LogicalDisplay.isEnabledLocked() → always true
+    //     Prevents any caller from seeing a display as "disabled".
+    //     Called by: ExternalDisplayPolicy, DisplayManagerService,
+    //     LogicalDisplayMapper.setEnabledLocked, etc.
+    private fun hookDisplayEnabledLocked(param: SystemServerStartingParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "com.android.server.display.LogicalDisplay")
+            val method = cls.getDeclaredMethod("isEnabledLocked")
+            method.isAccessible = true
+            hook(method) { chain ->
+                if (isOuterScreen()) {
+                    true
+                } else {
+                    chain.proceed()
+                }
+            }
+            log("DisplayState: isEnabledLocked → true when outer screen")
+        }.onFailure { log("DisplayState: isEnabledLocked failed", it) }
+    }
+
+    // 4b. ExternalDisplayPolicy.disableExternalDisplayLocked() → no-op
+    //     Explicitly blocks the external display disable policy.
+    //     Original code checks isEnabledLocked + display type, then disables.
+    private fun hookExternalDisplayDisable(param: SystemServerStartingParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "com.android.server.display.ExternalDisplayPolicy")
+            val method = cls.getDeclaredMethod("disableExternalDisplayLocked",
+                Int::class.javaPrimitiveType!!)
+            method.isAccessible = true
+            hook(method) { chain ->
+                if (isOuterScreen()) {
+                    log("DisplayState: BLOCKED disableExternalDisplayLocked(${chain.args[0]})")
+                    null
+                } else {
+                    chain.proceed()
+                }
+            }
+            log("DisplayState: disableExternalDisplayLocked → blocked when outer screen")
+        }.onFailure { log("DisplayState: disableExternalDisplayLocked failed", it) }
+    }
+
+    // ── 5. AOD on outer screen: prevent sleep + block dream timeouts ───
     //
     // a) MiuiFlipPolicy.shouldDeviceBeSleep() → COMMENTED OUT
     //    Blocking this prevents the device from entering dreaming state,
