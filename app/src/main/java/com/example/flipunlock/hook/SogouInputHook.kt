@@ -20,6 +20,7 @@ object SogouInputHook : BaseHook() {
     override val targetPackages = listOf("com.sohu.inputmethod.sogou.xiaomi")
 
     override fun setupHooks(param: PackageReadyParam) {
+        if (!Config.ime) { log("SogouInputHook: DISABLED by persist.flipunlock.ime"); return }
         log("SogouInputHook: loading for ${param.packageName}")
         safeHook("SogouInputHook") {
             hookToolbarFix(param)

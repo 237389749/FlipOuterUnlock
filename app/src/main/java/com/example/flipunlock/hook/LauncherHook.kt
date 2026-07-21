@@ -26,6 +26,7 @@ object LauncherHook : BaseHook() {
     override val targetPackages = listOf("com.miui.home")
 
     override fun setupHooks(param: PackageReadyParam) {
+        if (!Config.gestureHome) { log("LauncherHook: DISABLED by persist.flipunlock.gesture.home"); return }
         log("LauncherHook: loading for ${param.packageName}")
         safeHook("LauncherHook") {
             hookSpecialFDeviceFoldedMode(param)

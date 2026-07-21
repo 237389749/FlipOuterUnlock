@@ -21,6 +21,7 @@ object CutoutHook : BaseHook() {
     private var zeroCutout: DisplayCutout? = null
 
     fun hookFramework(param: SystemServerStartingParam) {
+        if (!Config.displayCutout) { log("CutoutHook: DISABLED by persist.flipunlock.display.cutout"); return }
         log("CutoutHook-framework: setting up in system_server")
         safeHook("CutoutHook-framework") {
             hookCutoutParser(param.classLoader)
@@ -31,6 +32,7 @@ object CutoutHook : BaseHook() {
     }
 
     override fun setupHooks(param: PackageReadyParam) {
+        if (!Config.displayCutout) return
         log("CutoutHook: loading for ${param.packageName}")
         hookCutoutParser(param.classLoader)
         hookPathAndDisplayCutoutFromSpec(param.classLoader)

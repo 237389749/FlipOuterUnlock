@@ -25,6 +25,7 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 object LetterboxHook {
 
     fun hook(param: SystemServerStartingParam) {
+        if (!Config.displayCutout) { log("LetterboxHook: DISABLED by persist.flipunlock.display.cutout"); return }
         log("LetterboxHook: setting up")
         safeHook("LetterboxHook") {
             runCatching {

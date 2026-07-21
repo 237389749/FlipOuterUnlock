@@ -7,6 +7,7 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 object InputMethodHook {
 
     fun hook(param: SystemServerStartingParam) {
+        if (!Config.ime) { log("InputMethodHook: DISABLED by persist.flipunlock.ime"); return }
         log("InputMethodHook: setting up")
         safeHook("InputMethodHook") {
             hookShouldShowCurrentInput(param)

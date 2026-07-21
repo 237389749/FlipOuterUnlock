@@ -32,6 +32,7 @@ object WatchOverlayHook : BaseHook() {
     override val targetPackages = listOf("com.miui.fliphome")
 
     override fun setupHooks(param: PackageReadyParam) {
+        if (!Config.uiWidget) { log("WatchOverlayHook: DISABLED by persist.flipunlock.ui.widget"); return }
         log("WatchOverlayHook: loading for ${param.packageName}")
         hookGetWatchOverlayWindow(param)       // Layer 0: root
         hookCheckAppConfigRunnable(param)       // Layer 1: controller

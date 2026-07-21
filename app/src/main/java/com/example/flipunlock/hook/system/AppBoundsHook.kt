@@ -7,6 +7,7 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 object AppBoundsHook {
 
     fun hook(param: SystemServerStartingParam) {
+        if (!Config.displayCutout) { log("AppBoundsHook: DISABLED by persist.flipunlock.display.cutout"); return }
         log("AppBoundsHook: setting up")
         safeHook("AppBounds") {
             hookFillInsetsState(param)

@@ -29,6 +29,7 @@ object GestureHook : BaseHook() {
     private var launcherDisabled = false
 
     override fun setupHooks(param: PackageReadyParam) {
+        if (!Config.gestureBack) { log("GestureFix: DISABLED by persist.flipunlock.gesture.back"); return }
         log("GestureFix: setupHooks")
         hookNoStartPage(param)
         disableFlipLauncher(param)

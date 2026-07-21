@@ -10,6 +10,7 @@ object ActivityLifecycleHook : BaseHook() {
     override val targetPackages = listOf("*")
 
     override fun hook(param: PackageReadyParam) {
+        if (!Config.displayCutout) return
         if (!shouldHook(param.packageName)) return
         log("ActivityLifecycleHook: loading for ${param.packageName}")
         safeHook("ActivityLifecycleHook") {

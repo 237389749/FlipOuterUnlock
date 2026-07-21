@@ -22,6 +22,7 @@ object AodHook : BaseHook() {
     @Volatile private var runtimeHooksInstalled = false
 
     override fun setupHooks(param: PackageReadyParam) {
+        if (!Config.displayAod) { log("AodHook: DISABLED by persist.flipunlock.display.aod"); return }
         val pkg = param.packageName
         val cl = param.classLoader
         log("AodHook: setupHooks pkg=$pkg")

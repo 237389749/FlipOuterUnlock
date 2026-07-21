@@ -37,6 +37,7 @@ object LockScreenHook : BaseHook() {
     override val targetPackages = listOf("com.android.systemui")
 
     override fun setupHooks(param: PackageReadyParam) {
+        if (!Config.uiLockScreen) { log("LockScreenHook: DISABLED by persist.flipunlock.ui.lockscreen"); return }
         log("LockScreenHook: loading for ${param.packageName}")
         safeHook("LockScreenHook") {
             hookTinyScreen(param)

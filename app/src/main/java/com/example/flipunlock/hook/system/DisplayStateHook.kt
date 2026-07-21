@@ -33,6 +33,7 @@ object DisplayStateHook {
     }
 
     fun hook(param: SystemServerStartingParam) {
+        if (!Config.displayDual) { log("DisplayStateHook: DISABLED by persist.flipunlock.display.dual"); return }
         log("DisplayStateHook: setting up")
         safeHook("DisplayStateHook") {
             hookDisplayToClosed(param)
