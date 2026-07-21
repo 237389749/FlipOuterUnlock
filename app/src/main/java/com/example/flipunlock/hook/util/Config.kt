@@ -16,6 +16,45 @@ package com.example.flipunlock.hook.util
  *   setprop persist.flipunlock.ui.lockscreen false       # lock screen layout
  *   setprop persist.flipunlock.ui.widget false           # disable widget overlay
  *   setprop persist.flipunlock.ime false                 # input method freedom
+ *
+ * ═══ Dependency / Coupling Notes ═══
+ *
+ * display.dual ── FOUNDATION ──┐
+ *   If disabled, state=6 is not forced. The system may fall back to native
+ *   flip behavior (state=0 CLOSED or state=2 OPEN). All hooks that depend
+ *   on outer=displayId=0 topology may still work but layout may differ.
+ *   ↓ affects: display.aod, gesture.home, ui.lockscreen (display routing)
+ *   ✗ no effect: display.cutout, gesture.back, ui.widget, ime
+ *
+ * gesture.back ←──── gesture.home ────→ gesture.back
+ *   Coupled! Both target the same launcher identity problem:
+ *   - gesture.back disables FlipLauncher (com.miui.fliphome)
+ *   - gesture.home forces getIsUseMiuiHomeAsDefaultHome→true
+ *   If gesture.back=OFF (FlipLauncher active) + gesture.home=ON:
+ *     FlipLauncher is default home → conflict with miuihome NavStubView
+ *   If gesture.back=ON (FlipLauncher disabled) + gesture.home=OFF:
+ *     No default home app → HOME intent may show "choose launcher" dialog
+ *   Recommended: keep both ON or both OFF together.
+ *
+ * display.aod ── depends on ── display.dual
+ *   AOD targets displayId from DreamService (outer screen in state=6).
+ *   display.dual must be ON for correct display routing.
+ *
+ * ui.lockscreen ── depends on ── display.dual
+ *   LockScreenHook hooks SystemUI which runs on displayId=0 (outer in state=6).
+ *   Independent of gesture toggles.
+ *
+ * display.cutout ── INDEPENDENT ──
+ *   Cutout/letterbox hooks operate at WindowManager/framework level.
+ *   No dependency on any other toggle.
+ *
+ * ui.widget ── INDEPENDENT ──
+ *   WatchOverlayHook operates in fliphome process only.
+ *   No dependency on any other toggle.
+ *
+ * ime ── INDEPENDENT ──
+ *   Input method hooks in system_server + Sogou process.
+ *   No dependency on any other toggle.
  */
 object Config {
     private val keys = listOf(
@@ -38,7 +77,7 @@ object Config {
     val displayAod: Boolean get() = enabled && raw("persist.flipunlock.display.aod", true)
     val displayCutout: Boolean get() = enabled && raw("persist.flipunlock.display.cutout", true)
 
-    // Gesture
+    // Gesture — keep together
     val gestureHome: Boolean get() = enabled && raw("persist.flipunlock.gesture.home", true)
     val gestureBack: Boolean get() = enabled && raw("persist.flipunlock.gesture.back", true)
 
@@ -49,11 +88,18 @@ object Config {
     // Other
     val ime: Boolean get() = enabled && raw("persist.flipunlock.ime", true)
 
-    /** Print all toggle keys and values to logcat on module startup. */
+    /** Print all toggle keys and values, plus coupling warnings. */
     fun logConfig() {
         val sb = StringBuilder("═══ FlipOuterUnlock Config ═══\n")
         for (key in keys) {
             sb.append("  $key = ${readProp(key)}\n")
+        }
+        // Coupling warnings
+        if (gestureHome != gestureBack) {
+            sb.append("  ⚠ gesture.home($gestureHome) ≠ gesture.back($gestureBack) — recommended keep together\n")
+        }
+        if (displayAod && !displayDual) {
+            sb.append("  ⚠ display.aod=ON but display.dual=OFF — AOD may route to wrong display\n")
         }
         sb.append("  (getprop | grep persist.flipunlock)")
         log(sb.toString())
