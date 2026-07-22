@@ -25,9 +25,18 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 object LauncherHook : BaseHook() {
     override val targetPackages = listOf("com.miui.home")
 
+    private fun fLog(msg: String) {
+        runCatching {
+            java.io.FileWriter("/sdcard/flip_gesture.log", true).use { fw ->
+                fw.append("${java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date())} $msg\n")
+            }
+        }
+        log(msg)
+    }
+
     override fun setupHooks(param: PackageReadyParam) {
         if (!Config.gestureHome) { log("LauncherHook: DISABLED by persist.flipunlock.gesture.home"); return }
-        log("LauncherHook: loading for ${param.packageName}")
+        fLog("LauncherHook: loading for ${param.packageName}")
         safeHook("LauncherHook") {
             hookSpecialFDeviceFoldedMode(param)
             hookStartRecentsAnimationPre(param)
@@ -79,27 +88,20 @@ object LauncherHook : BaseHook() {
             hook(method) { chain ->
                 val obj = chain.thisObject
                 val orig = hideField.getBoolean(obj)
-                if (orig) {
-                    hideField.setBoolean(obj, false)
-                }
-                // Clear stuck recents animation listener (state=1 blocks subsequent gestures)
+                if (orig) hideField.setBoolean(obj, false)
                 val listener = listenerField.get(obj)
+                var listenerState = -1
                 if (listener != null) {
-                    val state = runCatching { listener.javaClass.getDeclaredMethod("getState").invoke(listener) as? Int }.getOrNull()
-                    if (state == 1) {
+                    listenerState = runCatching { listener.javaClass.getDeclaredMethod("getState").invoke(listener) as? Int }.getOrNull() ?: -1
+                    if (listenerState == 1) {
                         listenerField.set(obj, null)
-                        log("LauncherHook: startRecentsAnimationPre — cleared stuck listener (state=$state)")
                     }
                 }
-                try {
-                    chain.proceed()
-                } finally {
-                    if (orig) {
-                        hideField.setBoolean(obj, true)
-                    }
-                }
+                fLog("startRecentsAnimationPre: hideLine=$orig listenerState=$listenerState")
+                try { chain.proceed() }
+                finally { if (orig) hideField.setBoolean(obj, true) }
             }
-            log("LauncherHook: hooked startRecentsAnimationPre")
+            fLog("LauncherHook: hooked startRecentsAnimationPre")
         }.onFailure { log("LauncherHook: startRecentsAnimationPre failed", it) }
     }
 
@@ -180,11 +182,19 @@ object LauncherHook : BaseHook() {
                 Boolean::class.javaPrimitiveType!!,
                 Boolean::class.javaPrimitiveType!!)
             method.isAccessible = true
+            var callCount = 0
             hook(method) { chain ->
                 val result = chain.proceed() as? Int ?: 0
-                if (result == 0) 2 else result
+                callCount++
+                if (result == 0) {
+                    if (callCount <= 5) fLog("getCurrentWindowMode → 0, overriding to 2 (#$callCount)")
+                    2
+                } else {
+                    if (callCount <= 3) fLog("getCurrentWindowMode → $result (#$callCount)")
+                    result
+                }
             }
-            log("LauncherHook: getCurrentWindowMode → override mode 0 → 2")
+            fLog("LauncherHook: hooked getCurrentWindowMode")
         }.onFailure { log("LauncherHook: getCurrentWindowMode failed", it) }
     }
 }
