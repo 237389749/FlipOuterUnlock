@@ -166,13 +166,21 @@ object LauncherHook : BaseHook() {
     }
 
     /**
-     * Hook getCurrentWindowMode(MotionEvent, boolean, boolean, boolean) → force valid mode.
-     *
-     * When it returns 0 (blocked by isWaitingCallback or any other check),
-     * override to mode=2 (app) so gesture processing proceeds.
-     * This is the most direct fix — bypass all mode=0 checks at once.
+     * Hook getCurrentWindowMode → override mode=0, AND hook isWaitingCallback → false.
+     * Two locks to break: mode=0 check + stuck GestureStateMachine.
      */
     private fun hookWaitingCallback(param: PackageReadyParam) {
+        // 5a. GestureStateMachine.isWaitingCallback() → false
+        runCatching {
+            val smClass = param.classLoader.loadClass(
+                "com.miui.home.recents.GestureStateMachine")
+            val smMethod = smClass.getDeclaredMethod("isWaitingCallback")
+            smMethod.isAccessible = true
+            hook(smMethod, replaceResult(false))
+            fLog("LauncherHook: GestureStateMachine.isWaitingCallback → false")
+        }.onFailure { log("LauncherHook: isWaitingCallback failed", it) }
+
+        // 5b. getCurrentWindowMode → override 0 to 2
         runCatching {
             val navClass = param.classLoader.loadClass(
                 "com.miui.home.recents.NavStubView")
