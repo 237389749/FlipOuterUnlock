@@ -33,6 +33,7 @@ object LauncherHook : BaseHook() {
             hookStartRecentsAnimationPre(param)
             hookIsDefaultHome(param)
             hookDisableHomeRecents(param)
+            hookWaitingCallback(param)
         }
     }
 
@@ -162,4 +163,26 @@ object LauncherHook : BaseHook() {
         }.onFailure { log("LauncherHook: onSystemUiFlagsChanged failed", it) }
     }
 
+    /**
+     * Hook GestureStateMachine.isWaitingCallback() → false.
+     *
+     * The state machine sets mIsWaitingCallback=true when a gesture transition
+     * begins and expects an animation callback to set it back to false.
+     * On the flip outer screen, this callback never fires — mIsWaitingCallback
+     * stays true forever, causing getCurrentWindowMode() to return 0 for
+     * ALL subsequent gestures. Mode 0 is not handled, no gesture processing.
+     *
+     * This is a system-level limitation — EdgePro Xposed also can't fix it.
+     * Forcing false lets getCurrentWindowMode() return a valid mode.
+     */
+    private fun hookWaitingCallback(param: PackageReadyParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "com.miui.home.recents.GestureStateMachine")
+            val method = cls.getDeclaredMethod("isWaitingCallback")
+            method.isAccessible = true
+            hook(method, replaceResult(false))
+            log("LauncherHook: GestureStateMachine.isWaitingCallback → false (Gate 5)")
+        }.onFailure { log("LauncherHook: isWaitingCallback failed", it) }
+    }
 }
