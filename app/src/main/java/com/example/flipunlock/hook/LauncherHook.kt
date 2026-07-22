@@ -164,25 +164,27 @@ object LauncherHook : BaseHook() {
     }
 
     /**
-     * Hook GestureStateMachine.isWaitingCallback() → false.
+     * Hook getCurrentWindowMode(MotionEvent, boolean, boolean, boolean) → force valid mode.
      *
-     * The state machine sets mIsWaitingCallback=true when a gesture transition
-     * begins and expects an animation callback to set it back to false.
-     * On the flip outer screen, this callback never fires — mIsWaitingCallback
-     * stays true forever, causing getCurrentWindowMode() to return 0 for
-     * ALL subsequent gestures. Mode 0 is not handled, no gesture processing.
-     *
-     * This is a system-level limitation — EdgePro Xposed also can't fix it.
-     * Forcing false lets getCurrentWindowMode() return a valid mode.
+     * When it returns 0 (blocked by isWaitingCallback or any other check),
+     * override to mode=2 (app) so gesture processing proceeds.
+     * This is the most direct fix — bypass all mode=0 checks at once.
      */
     private fun hookWaitingCallback(param: PackageReadyParam) {
         runCatching {
-            val cls = param.classLoader.loadClass(
-                "com.miui.home.recents.GestureStateMachine")
-            val method = cls.getDeclaredMethod("isWaitingCallback")
+            val navClass = param.classLoader.loadClass(
+                "com.miui.home.recents.NavStubView")
+            val method = navClass.getDeclaredMethod("getCurrentWindowMode",
+                android.view.MotionEvent::class.java,
+                Boolean::class.javaPrimitiveType!!,
+                Boolean::class.javaPrimitiveType!!,
+                Boolean::class.javaPrimitiveType!!)
             method.isAccessible = true
-            hook(method, replaceResult(false))
-            log("LauncherHook: GestureStateMachine.isWaitingCallback → false (Gate 5)")
-        }.onFailure { log("LauncherHook: isWaitingCallback failed", it) }
+            hook(method) { chain ->
+                val result = chain.proceed() as? Int ?: 0
+                if (result == 0) 2 else result
+            }
+            log("LauncherHook: getCurrentWindowMode → override mode 0 → 2")
+        }.onFailure { log("LauncherHook: getCurrentWindowMode failed", it) }
     }
 }
