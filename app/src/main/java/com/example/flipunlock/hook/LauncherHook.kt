@@ -299,22 +299,43 @@ object LauncherHook : BaseHook() {
 
                     fLog("Gate6c: UP msg $msgWhat dragPer=${"%.2f".format(dragPer)}")
                     if (dragPer > 0.5f) {
-                        // Diagnose why showRecents fails: check mLauncher + animation guard
+                        // Long drag → go to recents
+                        // showRecents() may fail due to executor issues, so also
+                        // directly transition launcher to OVERVIEW state
                         val mLauncher = runCatching {
                             navClass.getDeclaredField("mLauncher")
                                 .apply { isAccessible = true }.get(nav)
                         }.getOrNull()
-                        val animFailed = runCatching {
-                            navClass.getDeclaredMethod("isNeedStopBecauseRecentsRemoteAnimStartFailed")
-                                .apply { isAccessible = true }.invoke(nav) as? Boolean
-                        }.getOrNull()
-                        fLog("Gate6c: showRecents check — mLauncher=$mLauncher animFailed=$animFailed")
-                        // Try showRecents
-                        runCatching {
-                            navClass.getDeclaredMethod("showRecents")
-                                .apply { isAccessible = true }.invoke(nav)
+                        var wentToRecents = false
+                        if (mLauncher != null) {
+                            runCatching {
+                                // LauncherState.OVERVIEW — enum constant
+                                val overviewState = param.classLoader
+                                    .loadClass("com.miui.home.launcher.LauncherState")
+                                    .getDeclaredField("OVERVIEW").get(null)
+                                // StateManager.getInstance().goToState(OVERVIEW, false)
+                                val stateMgrClass = param.classLoader
+                                    .loadClass("com.miui.home.launcher.LauncherStateManager")
+                                val goToState = stateMgrClass.methods.firstOrNull {
+                                    it.name == "goToState" && it.parameterCount == 2 &&
+                                    it.parameterTypes[1] == Boolean::class.javaPrimitiveType
+                                }
+                                if (goToState != null) {
+                                    goToState.invoke(stateMgrClass.getMethod("getInstance").invoke(null), overviewState, false)
+                                    wentToRecents = true
+                                }
+                            }
                         }
-                        fLog("Gate6c: → showRecents done")
+                        if (!wentToRecents) {
+                            // Fallback: try showRecents or go home
+                            runCatching {
+                                navClass.getDeclaredMethod("showRecents")
+                                    .apply { isAccessible = true }.invoke(nav)
+                            }
+                            fLog("Gate6c: → showRecents (goToState not available)")
+                        } else {
+                            fLog("Gate6c: → recents (goToState OVERVIEW)")
+                        }
                     } else {
                         runCatching {
                             navClass.getDeclaredMethod("checkAndLauncherHome")
