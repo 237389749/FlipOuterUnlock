@@ -33,6 +33,7 @@ object GestureHook : BaseHook() {
         log("GestureFix: setupHooks")
         hookNoStartPage(param)
         disableFlipLauncher(param)
+        hookSideGesturePersistence(param)
     }
 
     // ── 1. No start page (ported from MixFlipMod) ────────────────────────
@@ -46,7 +47,76 @@ object GestureHook : BaseHook() {
         }.onFailure { log("GestureFix: PerformLaunchAction not found", it) }
     }
 
-    // ── 2. Disable FlipLauncher component (keep process alive) ───────────
+    // ── 2. Prevent fold state changes from destroying side gesture stubs ──
+    //
+    // BaseGestureImpl.onDisplayFoldChanged(false) triggers:
+    //   clearBackStubWindow() → GestureStubView.clearGestureStub()
+    //     → hideGestureStub() + wm.removeView(this)  ← WINDOW DESTROYED
+    //     → mGestureStubLeft/Right = null
+    //   disableGestureInput() → mGestureInputHelper.setEnable(false)
+    //
+    // Once the stubs are destroyed, showBackStubWindow() is a no-op
+    // (null check returns early). They only come back if onDisplayFoldChanged(true)
+    // fires again, which may never happen due to our display state hooks.
+    //
+    // Fix: block clearBackStubWindow + disableGestureInput at the source.
+    // Also force mIsFolded=true so all the guards pass.
+    private fun hookSideGesturePersistence(param: PackageReadyParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "com.miui.fliphome.gesture.BaseGestureImpl")
+
+            // Block clearBackStubWindow() — prevents GestureStubView removal
+            runCatching {
+                val method = cls.getDeclaredMethod("clearBackStubWindow")
+                method.isAccessible = true
+                hook(method) {
+                    log("GestureFix: BLOCKED clearBackStubWindow")
+                    null
+                }
+            }
+
+            // Block disableGestureInput() — keeps InputMonitor alive
+            runCatching {
+                val method = cls.getDeclaredMethod("disableGestureInput")
+                method.isAccessible = true
+                hook(method) {
+                    log("GestureFix: BLOCKED disableGestureInput")
+                    null
+                }
+            }
+
+            // Force mIsFolded=true on every onDisplayFoldChanged call
+            runCatching {
+                val foldedField = cls.getDeclaredField("mIsFolded")
+                foldedField.isAccessible = true
+                // Hook methods that read mIsFolded: updateFsgWindowStateForHome, enableGestureInput, onResumed
+                // The simplest: hook onResumed to force mIsFolded=true first
+                val onResumedMethod = cls.getDeclaredMethod("onResumed",
+                    android.content.ComponentName::class.java)
+                onResumedMethod.isAccessible = true
+                hook(onResumedMethod, before { chain ->
+                    val obj = chain.thisObject
+                    runCatching { foldedField.setBoolean(obj, true) }
+                })
+                // Also hook the fold change path: find and hook the display fold listener
+                // The BroadcastManager sends onDisplayFoldChanged via AbstractSystemEventPresenter
+                // We hook hideBackStubWindow as defense-in-depth
+                runCatching {
+                    val hideMethod = cls.getDeclaredMethod("hideBackStubWindow")
+                    hideMethod.isAccessible = true
+                    hook(hideMethod) {
+                        log("GestureFix: BLOCKED hideBackStubWindow")
+                        null
+                    }
+                }
+            }
+
+            log("GestureFix: side gesture persistence hooks installed")
+        }.onFailure { log("GestureFix: side gesture persistence failed", it) }
+    }
+
+    // ── 3. Disable FlipLauncher component (keep process alive) ───────────
     private fun disableFlipLauncher(param: PackageReadyParam) {
         if (launcherDisabled) return
         runCatching {

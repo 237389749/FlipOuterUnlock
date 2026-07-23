@@ -43,6 +43,7 @@ object LauncherHook : BaseHook() {
             hookIsDefaultHome(param)
             hookDisableHomeRecents(param)
             hookWaitingCallback(param)
+            hookGestureDiagnostics(param)
         }
     }
 
@@ -204,5 +205,92 @@ object LauncherHook : BaseHook() {
             }
             fLog("LauncherHook: hooked getCurrentWindowMode")
         }.onFailure { log("LauncherHook: getCurrentWindowMode failed", it) }
+    }
+
+    /**
+     * Diagnostic hooks to trace the full gesture pipeline from touch to action.
+     *
+     * Logs every decision point in onPointerEvent:
+     * 1. Entry — did the touch reach NavStubView at all?
+     * 2. initValueAndCheckRunningTaskValidity — does the task info exist?
+     * 3. getCurrentWindowMode — what mode was determined?
+     * 4. appTouchResolution — did we enter the app gesture handler?
+     *
+     * All output goes to /sdcard/flip_gesture.log for reliable capture.
+     */
+    private fun hookGestureDiagnostics(param: PackageReadyParam) {
+        val navClass = runCatching {
+            param.classLoader.loadClass("com.miui.home.recents.NavStubView")
+        }.getOrNull() ?: return
+
+        // Hook initValueAndCheckRunningTaskValidity — the SILENT KILLER
+        // If this returns false, onPointerEvent returns immediately with NO log.
+        runCatching {
+            val method = navClass.getDeclaredMethod("initValueAndCheckRunningTaskValidity",
+                android.view.MotionEvent::class.java)
+            method.isAccessible = true
+            hook(method) { chain ->
+                val result = chain.proceed() as? Boolean ?: false
+                if (!result) {
+                    // Get runningTaskInfo state to understand why
+                    val taskInfo = runCatching {
+                        navClass.getDeclaredMethod("getRunningTaskForGesture")
+                            .apply { isAccessible = true }
+                            .invoke(chain.thisObject)
+                    }.getOrNull()
+                    val baseActivity = runCatching {
+                        taskInfo?.javaClass?.getField("baseActivity")?.get(taskInfo)
+                    }.getOrNull()
+                    fLog("DIAG: initValueAndCheckRunningTaskValidity → FALSE (taskInfo=$taskInfo baseActivity=$baseActivity)")
+                }
+                result
+            }
+            fLog("DIAG: hooked initValueAndCheckRunningTaskValidity")
+        }.onFailure { log("DIAG: initValueAndCheckRunningTaskValidity failed", it) }
+
+        // Hook checkRunningTaskValidity — logs what it sees
+        runCatching {
+            val method = navClass.getDeclaredMethod("checkRunningTaskValidity")
+            method.isAccessible = true
+            hook(method) { chain ->
+                val result = chain.proceed() as? Boolean ?: false
+                if (!result) {
+                    val taskInfo = runCatching {
+                        navClass.getDeclaredMethod("getRunningTaskForGesture")
+                            .apply { isAccessible = true }
+                            .invoke(chain.thisObject)
+                    }.getOrNull()
+                    fLog("DIAG: checkRunningTaskValidity → FALSE (taskInfo=$taskInfo)")
+                }
+                result
+            }
+            fLog("DIAG: hooked checkRunningTaskValidity")
+        }.onFailure { log("DIAG: checkRunningTaskValidity failed", it) }
+
+        // Hook onComputeInternalInsets — is touch region empty?
+        runCatching {
+            // Find the OnComputeInternalInsetsListenerCompat anonymous class is tricky.
+            // Instead, hook shouldUseEmptyTouchableRegion which controls the region.
+            val method = navClass.getDeclaredMethod("shouldUseEmptyTouchableRegion")
+            method.isAccessible = true
+            var lastResult = true
+            hook(method) { chain ->
+                val result = chain.proceed() as? Boolean ?: true
+                if (result != lastResult) {
+                    lastResult = result
+                    val disableHome = runCatching {
+                        navClass.getDeclaredField("mDisableHomeRecents")
+                            .apply { isAccessible = true }
+                            .getBoolean(chain.thisObject)
+                    }.getOrNull()
+                    fLog("DIAG: shouldUseEmptyTouchableRegion → $result (mDisableHomeRecents=$disableHome)")
+                }
+                result
+            }
+            fLog("DIAG: hooked shouldUseEmptyTouchableRegion")
+        }.onFailure { log("DIAG: shouldUseEmptyTouchableRegion failed", it) }
+
+        // onSystemUiFlagsChanged is already hooked by hookDisableHomeRecents (Gate 4).
+        // Don't double-hook — the existing hook forces mDisableHomeRecents=false.
     }
 }

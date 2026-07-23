@@ -28,6 +28,7 @@ object CutoutHook : BaseHook() {
             hookPathAndDisplayCutoutFromSpec(param.classLoader)
             hookDisplayGetCutout()
             hookDisplayFlipFoldedCutout()
+            hookWindowInsetsGetCutout()
         }
     }
 
@@ -39,6 +40,7 @@ object CutoutHook : BaseHook() {
         hookDisplayGetCutout()
         hookDisplayFlipFoldedCutout()
         hookDisplayUtilsGetCutoutPosition(param)
+        hookWindowInsetsGetCutout()
     }
 
     private fun hookCutoutParser(classLoader: ClassLoader) {
@@ -153,6 +155,28 @@ object CutoutHook : BaseHook() {
             zeroCutout = constructZeroCutout()
         }.onFailure { log("CutoutFix: construct zero cutout failed", it) }
         return zeroCutout
+    }
+
+    /**
+     * Hook WindowInsets.getDisplayCutout() → always return null.
+     *
+     * Display.getCutout() and the CutoutSpecification parser are already zeroed,
+     * but WindowInsets carries its own DisplayCutout reference that is computed
+     * at layout time and delivered to views via onApplyWindowInsets(). SystemUI
+     * notification views (heads-up popups, NotificationStackScrollLayout) read
+     * the cutout from WindowInsets, NOT from Display.getCutout(), so they still
+     * see the real cutout and shift content to avoid the camera hole.
+     *
+     * This hook closes that gap — any view consuming WindowInsets will see no cutout.
+     */
+    private fun hookWindowInsetsGetCutout() {
+        runCatching {
+            val insetsClass = android.view.WindowInsets::class.java
+            val method = insetsClass.getDeclaredMethod("getDisplayCutout")
+            method.isAccessible = true
+            hook(method, replaceResult(null))
+            log("CutoutFix: WindowInsets.getDisplayCutout → null")
+        }.onFailure { log("CutoutFix: WindowInsets.getDisplayCutout failed", it) }
     }
 
     private fun constructZeroCutout(): DisplayCutout {
