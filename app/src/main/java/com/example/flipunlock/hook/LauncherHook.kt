@@ -299,14 +299,23 @@ object LauncherHook : BaseHook() {
 
                     fLog("Gate6c: UP msg $msgWhat dragPer=${"%.2f".format(dragPer)}")
                     if (dragPer > 0.5f) {
-                        // Long drag → try recents
+                        // Diagnose why showRecents fails: check mLauncher + animation guard
+                        val mLauncher = runCatching {
+                            navClass.getDeclaredField("mLauncher")
+                                .apply { isAccessible = true }.get(nav)
+                        }.getOrNull()
+                        val animFailed = runCatching {
+                            navClass.getDeclaredMethod("isNeedStopBecauseRecentsRemoteAnimStartFailed")
+                                .apply { isAccessible = true }.invoke(nav) as? Boolean
+                        }.getOrNull()
+                        fLog("Gate6c: showRecents check — mLauncher=$mLauncher animFailed=$animFailed")
+                        // Try showRecents
                         runCatching {
                             navClass.getDeclaredMethod("showRecents")
                                 .apply { isAccessible = true }.invoke(nav)
                         }
-                        fLog("Gate6c: → showRecents (dragPer=${"%.2f".format(dragPer)} > 0.5)")
+                        fLog("Gate6c: → showRecents done")
                     } else {
-                        // Short drag → go home
                         runCatching {
                             navClass.getDeclaredMethod("checkAndLauncherHome")
                                 .apply { isAccessible = true }.invoke(nav)
