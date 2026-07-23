@@ -44,6 +44,7 @@ object LauncherHook : BaseHook() {
             hookDisableHomeRecents(param)
             hookWaitingCallback(param)
             hookBypassRecentsAnimation(param)
+            hookRecentsDisplayFilter(param)
             hookGestureDiagnostics(param)
         }
     }
@@ -339,6 +340,33 @@ object LauncherHook : BaseHook() {
             }
             fLog("LauncherHook: Gate 6c — home/recents dispatch installed")
         }.onFailure { fLog("LauncherHook: Gate 6c failed ${it.message}") }
+    }
+
+    /**
+     * Gate 7: Fix empty recents — disable display-based task filtering.
+     *
+     * RecentsModel.removeOtherDisplayTask() removes all tasks whose display ID
+     * doesn't match this.mDisplay.getDisplayId(). On the flip outer screen,
+     * mDisplay (from getDefaultDisplay()) may return a different display ID
+     * than the tasks (which run on the outer screen). This causes ALL tasks
+     * to be filtered out, resulting in an empty recents view.
+     *
+     * Fix: hook removeOtherDisplayTask → no-op. Allow all tasks regardless
+     * of display ID. There's only one active display in state=6 anyway.
+     */
+    private fun hookRecentsDisplayFilter(param: PackageReadyParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "com.miui.home.recents.RecentsModel")
+            val method = cls.getDeclaredMethod("removeOtherDisplayTask",
+                java.util.List::class.java)
+            method.isAccessible = true
+            hook(method) {
+                // No-op: don't filter tasks by display ID
+                null
+            }
+            fLog("LauncherHook: Gate 7 — removeOtherDisplayTask → no-op")
+        }.onFailure { fLog("LauncherHook: Gate 7 failed ${it.message}") }
     }
 
     /**
