@@ -209,37 +209,51 @@ object LauncherHook : BaseHook() {
     }
 
     /**
-     * Gate 6: Bypass broken recents animation — go home directly.
+     * Gate 6: Bypass broken recents animation — go home or recents directly.
      *
      * The entire gesture animation pipeline is broken on the flip outer screen:
      *
-     * 1. AppWaitToDragState.enter() sets mIsWaitingCallback=true, waits for
+     * 1. AppWaitToDragState.enter() → mIsWaitingCallback=true, waits for
      *    Shell/WindowTransition animation callback (msg 11) — NEVER arrives.
      * 2. processMessage stores mMsgUpType on ACTION_UP, waits for msg 11.
      * 3. After 800ms timeout, finishRecentsActivityDirectly() only resets
-     *    state — NO home/recents action is performed.
-     * 4. Even if we simulate msg 11 → onRecentsAnimationStart() →
-     *    performAppToHome() → finishAppToHome() → finish() →
-     *    finishController() — also goes through the same broken Shell
-     *    transition and hangs again.
+     *    state — NO home/recents action.
+     * 4. Even if msg 11 → onRecentsAnimationStart() → performAppToHome() →
+     *    finishAppToHome() → finish() → finishController() — also hangs on
+     *    the broken Shell transition.
+     * 5. showRecents() checks isNeedStopBecauseRecentsRemoteAnimStartFailed()
+     *    at the top → true → returns immediately, never shows recents view.
      *
-     * FIX: Two-pronged bypass:
-     *   a) Hook AppWaitToDragState.processMessage() — on ACTION_UP, after
-     *      storing mMsgUpType, call checkAndLauncherHome() directly instead
-     *      of waiting for the animation callback.
-     *   b) Hook performAppToHome() — redirect to checkAndLauncherHome()
-     *      to prevent the finishController() hang in the fallback path.
+     * FIX: Three-pronged bypass:
+     *   a) isNeedStopBecauseRecentsRemoteAnimStartFailed() → false
+     *      Allows showRecents() to run and desktop recents to display.
+     *   b) Hook performAppToHome() → redirect to checkAndLauncherHome()
+     *      Skips the finishController() hang.
+     *   c) Hook AppWaitToDragState.processMessage() — on ACTION_UP,
+     *      check drag distance (isSafeArea) to decide home vs recents,
+     *      then call the appropriate method directly.
      */
     private fun hookBypassRecentsAnimation(param: PackageReadyParam) {
         val navClass = param.classLoader.loadClass(
             "com.miui.home.recents.NavStubView")
 
-        // 6a. Hook performAppToHome → go home directly, skip broken animation
+        // 6a. isNeedStopBecauseRecentsRemoteAnimStartFailed() → false
+        //     Unblocks showRecents(), startAppToHomeAnim(), and other methods
+        //     that bail out when they think the remote animation failed.
+        runCatching {
+            val method = navClass.getDeclaredMethod(
+                "isNeedStopBecauseRecentsRemoteAnimStartFailed")
+            method.isAccessible = true
+            hook(method, replaceResult(false))
+            fLog("LauncherHook: Gate 6a — isNeedStopBecauseRecentsRemoteAnimStartFailed → false")
+        }.onFailure { log("LauncherHook: Gate 6a failed", it) }
+
+        // 6b. Hook performAppToHome → go home directly, skip broken animation
         runCatching {
             val method = navClass.getDeclaredMethod("performAppToHome")
             method.isAccessible = true
             hook(method) { chain ->
-                fLog("Gate6a: performAppToHome → direct home (bypass finishController)")
+                fLog("Gate6b: performAppToHome → direct home")
                 runCatching {
                     navClass.getDeclaredMethod("checkAndLauncherHome")
                         .apply { isAccessible = true }
@@ -247,10 +261,10 @@ object LauncherHook : BaseHook() {
                 }
                 null  // Skip original — don't go through finishController
             }
-            fLog("LauncherHook: Gate 6a — performAppToHome bypass installed")
-        }.onFailure { log("LauncherHook: Gate 6a failed", it) }
+            fLog("LauncherHook: Gate 6b — performAppToHome bypass installed")
+        }.onFailure { log("LauncherHook: Gate 6b failed", it) }
 
-        // 6b. Hook AppWaitToDragState.processMessage() — trigger home on ACTION_UP
+        // 6c. Hook AppWaitToDragState.processMessage() — decide home vs recents
         runCatching {
             val smClass = param.classLoader.loadClass(
                 "com.miui.home.recents.GestureStateMachine")
@@ -268,23 +282,38 @@ object LauncherHook : BaseHook() {
                 val msgWhat = msg?.what ?: 0
                 val result = chain.proceed()  // Let original store mMsgUpType
                 if (msgWhat in 4..10) {
-                    // Get NavStubView via GestureStateMachine.mNavStubView
                     val sm = runCatching {
                         appWaitClass.getDeclaredField("this\$0")
                             .apply { isAccessible = true }.get(chain.thisObject)
                     }.getOrNull() ?: return@hook result
-                    val nav = navField.get(sm)
-                    // Go home directly — bypass the entire animation pipeline
-                    runCatching {
-                        navClass.getDeclaredMethod("checkAndLauncherHome")
-                            .apply { isAccessible = true }.invoke(nav)
+                    val nav = navField.get(sm) ?: return@hook result
+
+                    // Decide home vs recents based on drag distance
+                    val isSafeArea = runCatching {
+                        navClass.getDeclaredMethod("isSafeArea")
+                            .apply { isAccessible = true }.invoke(nav) as? Boolean
+                    }.getOrNull() ?: true
+
+                    if (isSafeArea) {
+                        // Short swipe → go home
+                        runCatching {
+                            navClass.getDeclaredMethod("checkAndLauncherHome")
+                                .apply { isAccessible = true }.invoke(nav)
+                        }
+                        fLog("Gate6c: direct HOME after UP msg $msgWhat (safe area)")
+                    } else {
+                        // Long swipe → go to recents
+                        runCatching {
+                            navClass.getDeclaredMethod("showRecents")
+                                .apply { isAccessible = true }.invoke(nav)
+                        }
+                        fLog("Gate6c: direct RECENTS after UP msg $msgWhat (beyond safe area)")
                     }
-                    fLog("Gate6b: direct home after UP msg $msgWhat")
                 }
                 result
             }
-            fLog("LauncherHook: Gate 6b — AppWaitToDragState bypass installed")
-        }.onFailure { log("LauncherHook: Gate 6b failed", it) }
+            fLog("LauncherHook: Gate 6c — AppWaitToDragState home/recents dispatch installed")
+        }.onFailure { log("LauncherHook: Gate 6c failed", it) }
     }
 
     /**
