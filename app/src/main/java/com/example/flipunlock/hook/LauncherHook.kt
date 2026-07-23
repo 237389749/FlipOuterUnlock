@@ -43,6 +43,7 @@ object LauncherHook : BaseHook() {
             hookIsDefaultHome(param)
             hookDisableHomeRecents(param)
             hookWaitingCallback(param)
+            hookBypassRecentsAnimation(param)
             hookGestureDiagnostics(param)
         }
     }
@@ -205,6 +206,66 @@ object LauncherHook : BaseHook() {
             }
             fLog("LauncherHook: hooked getCurrentWindowMode")
         }.onFailure { log("LauncherHook: getCurrentWindowMode failed", it) }
+    }
+
+    /**
+     * Gate 6: Bypass broken recents animation callback.
+     *
+     * ROOT CAUSE: AppWaitToDragState.enter() sets mIsWaitingCallback=true and
+     * waits for the system's Shell/WindowTransition animation callback. On the
+     * flip outer screen, this callback NEVER fires. The state machine stays
+     * stuck in AppWaitToDragState forever. When the user lifts their finger,
+     * processMessage stores mMsgUpType and waits for msg 11 (from callback).
+     * After 800ms timeout, finishRecentsActivityDirectly() is called, which
+     * ONLY resets state — it does NOT perform the actual Home/Recents action.
+     *
+     * FIX: Hook AppWaitToDragState.processMessage(). When an ACTION_UP message
+     * (4-10) arrives, let the original run (stores mMsgUpType), then immediately
+     * send msg 11 to the parent GestureStateMachine. This triggers
+     * onRecentsAnimationStart() which processes mMsgUpType and calls the actual
+     * Home/Recents action (performAppToHome etc).
+     */
+    private fun hookBypassRecentsAnimation(param: PackageReadyParam) {
+        runCatching {
+            val smClass = param.classLoader.loadClass(
+                "com.miui.home.recents.GestureStateMachine")
+
+            // Find AppWaitToDragState inner class
+            val appWaitClass = smClass.declaredClasses.firstOrNull {
+                it.simpleName == "AppWaitToDragState"
+            } ?: return
+
+            val processMethod = appWaitClass.getDeclaredMethod("processMessage",
+                android.os.Message::class.java)
+            processMethod.isAccessible = true
+
+            hook(processMethod) { chain ->
+                val msg = chain.args[0] as? android.os.Message
+                val msgWhat = msg?.what ?: 0
+                // Let original run first (stores mMsgUpType)
+                val result = chain.proceed()
+                // ACTION_UP messages: 4=fastPullDown, 5=fastPullUp, 6=fastPullDownLeft,
+                // 7=fastPullDownRight, 8=slowPullLeft, 9=slowPullRight, 10=slow
+                if (msgWhat in 4..10) {
+                    // Get the GestureStateMachine instance via inner class this$0
+                    val sm = runCatching {
+                        appWaitClass.getDeclaredField("this\$0")
+                            .apply { isAccessible = true }
+                            .get(chain.thisObject)
+                    }.getOrNull() ?: return@hook result
+                    // Send msg 11 to trigger onRecentsAnimationStart immediately
+                    // This processes the stored mMsgUpType and performs the real action
+                    runCatching {
+                        sm.javaClass.getDeclaredMethod("sendMessage", Int::class.javaPrimitiveType!!)
+                            .apply { isAccessible = true }
+                            .invoke(sm, 11)
+                    }
+                    fLog("Gate6: bypass recents anim — sent msg 11 after UP msg $msgWhat")
+                }
+                result
+            }
+            fLog("LauncherHook: Gate 6 — bypass recents animation callback installed")
+        }.onFailure { log("LauncherHook: Gate 6 failed", it) }
     }
 
     /**
