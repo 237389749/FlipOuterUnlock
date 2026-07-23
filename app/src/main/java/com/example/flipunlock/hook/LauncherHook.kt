@@ -209,63 +209,82 @@ object LauncherHook : BaseHook() {
     }
 
     /**
-     * Gate 6: Bypass broken recents animation callback.
+     * Gate 6: Bypass broken recents animation — go home directly.
      *
-     * ROOT CAUSE: AppWaitToDragState.enter() sets mIsWaitingCallback=true and
-     * waits for the system's Shell/WindowTransition animation callback. On the
-     * flip outer screen, this callback NEVER fires. The state machine stays
-     * stuck in AppWaitToDragState forever. When the user lifts their finger,
-     * processMessage stores mMsgUpType and waits for msg 11 (from callback).
-     * After 800ms timeout, finishRecentsActivityDirectly() is called, which
-     * ONLY resets state — it does NOT perform the actual Home/Recents action.
+     * The entire gesture animation pipeline is broken on the flip outer screen:
      *
-     * FIX: Hook AppWaitToDragState.processMessage(). When an ACTION_UP message
-     * (4-10) arrives, let the original run (stores mMsgUpType), then immediately
-     * send msg 11 to the parent GestureStateMachine. This triggers
-     * onRecentsAnimationStart() which processes mMsgUpType and calls the actual
-     * Home/Recents action (performAppToHome etc).
+     * 1. AppWaitToDragState.enter() sets mIsWaitingCallback=true, waits for
+     *    Shell/WindowTransition animation callback (msg 11) — NEVER arrives.
+     * 2. processMessage stores mMsgUpType on ACTION_UP, waits for msg 11.
+     * 3. After 800ms timeout, finishRecentsActivityDirectly() only resets
+     *    state — NO home/recents action is performed.
+     * 4. Even if we simulate msg 11 → onRecentsAnimationStart() →
+     *    performAppToHome() → finishAppToHome() → finish() →
+     *    finishController() — also goes through the same broken Shell
+     *    transition and hangs again.
+     *
+     * FIX: Two-pronged bypass:
+     *   a) Hook AppWaitToDragState.processMessage() — on ACTION_UP, after
+     *      storing mMsgUpType, call checkAndLauncherHome() directly instead
+     *      of waiting for the animation callback.
+     *   b) Hook performAppToHome() — redirect to checkAndLauncherHome()
+     *      to prevent the finishController() hang in the fallback path.
      */
     private fun hookBypassRecentsAnimation(param: PackageReadyParam) {
+        val navClass = param.classLoader.loadClass(
+            "com.miui.home.recents.NavStubView")
+
+        // 6a. Hook performAppToHome → go home directly, skip broken animation
+        runCatching {
+            val method = navClass.getDeclaredMethod("performAppToHome")
+            method.isAccessible = true
+            hook(method) { chain ->
+                fLog("Gate6a: performAppToHome → direct home (bypass finishController)")
+                runCatching {
+                    navClass.getDeclaredMethod("checkAndLauncherHome")
+                        .apply { isAccessible = true }
+                        .invoke(chain.thisObject)
+                }
+                null  // Skip original — don't go through finishController
+            }
+            fLog("LauncherHook: Gate 6a — performAppToHome bypass installed")
+        }.onFailure { log("LauncherHook: Gate 6a failed", it) }
+
+        // 6b. Hook AppWaitToDragState.processMessage() — trigger home on ACTION_UP
         runCatching {
             val smClass = param.classLoader.loadClass(
                 "com.miui.home.recents.GestureStateMachine")
-
-            // Find AppWaitToDragState inner class
             val appWaitClass = smClass.declaredClasses.firstOrNull {
                 it.simpleName == "AppWaitToDragState"
             } ?: return
-
             val processMethod = appWaitClass.getDeclaredMethod("processMessage",
                 android.os.Message::class.java)
             processMethod.isAccessible = true
+            val navField = smClass.getDeclaredField("mNavStubView")
+            navField.isAccessible = true
 
             hook(processMethod) { chain ->
                 val msg = chain.args[0] as? android.os.Message
                 val msgWhat = msg?.what ?: 0
-                // Let original run first (stores mMsgUpType)
-                val result = chain.proceed()
-                // ACTION_UP messages: 4=fastPullDown, 5=fastPullUp, 6=fastPullDownLeft,
-                // 7=fastPullDownRight, 8=slowPullLeft, 9=slowPullRight, 10=slow
+                val result = chain.proceed()  // Let original store mMsgUpType
                 if (msgWhat in 4..10) {
-                    // Get the GestureStateMachine instance via inner class this$0
+                    // Get NavStubView via GestureStateMachine.mNavStubView
                     val sm = runCatching {
                         appWaitClass.getDeclaredField("this\$0")
-                            .apply { isAccessible = true }
-                            .get(chain.thisObject)
+                            .apply { isAccessible = true }.get(chain.thisObject)
                     }.getOrNull() ?: return@hook result
-                    // Send msg 11 to trigger onRecentsAnimationStart immediately
-                    // This processes the stored mMsgUpType and performs the real action
+                    val nav = navField.get(sm)
+                    // Go home directly — bypass the entire animation pipeline
                     runCatching {
-                        sm.javaClass.getDeclaredMethod("sendMessage", Int::class.javaPrimitiveType!!)
-                            .apply { isAccessible = true }
-                            .invoke(sm, 11)
+                        navClass.getDeclaredMethod("checkAndLauncherHome")
+                            .apply { isAccessible = true }.invoke(nav)
                     }
-                    fLog("Gate6: bypass recents anim — sent msg 11 after UP msg $msgWhat")
+                    fLog("Gate6b: direct home after UP msg $msgWhat")
                 }
                 result
             }
-            fLog("LauncherHook: Gate 6 — bypass recents animation callback installed")
-        }.onFailure { log("LauncherHook: Gate 6 failed", it) }
+            fLog("LauncherHook: Gate 6b — AppWaitToDragState bypass installed")
+        }.onFailure { log("LauncherHook: Gate 6b failed", it) }
     }
 
     /**
