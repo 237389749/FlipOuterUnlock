@@ -246,7 +246,7 @@ object LauncherHook : BaseHook() {
             method.isAccessible = true
             hook(method, replaceResult(false))
             fLog("LauncherHook: Gate 6a — isNeedStopBecauseRecentsRemoteAnimStartFailed → false")
-        }.onFailure { log("LauncherHook: Gate 6a failed", it) }
+        }.onFailure { fLog("LauncherHook: Gate 6a failed ${it.message}") }
 
         // 6b. Hook performAppToHome → go home directly, skip broken animation
         runCatching {
@@ -262,9 +262,9 @@ object LauncherHook : BaseHook() {
                 null  // Skip original — don't go through finishController
             }
             fLog("LauncherHook: Gate 6b — performAppToHome bypass installed")
-        }.onFailure { log("LauncherHook: Gate 6b failed", it) }
+        }.onFailure { fLog("LauncherHook: Gate 6b failed ${it.message}") }
 
-        // 6c. Hook AppWaitToDragState.processMessage() — decide home vs recents
+        // 6c. Hook AppWaitToDragState.processMessage() — go home or recents on ACTION_UP.
         runCatching {
             val smClass = param.classLoader.loadClass(
                 "com.miui.home.recents.GestureStateMachine")
@@ -288,32 +288,36 @@ object LauncherHook : BaseHook() {
                     }.getOrNull() ?: return@hook result
                     val nav = navField.get(sm) ?: return@hook result
 
-                    // Decide home vs recents based on drag distance
-                    val isSafeArea = runCatching {
-                        navClass.getDeclaredMethod("isSafeArea")
-                            .apply { isAccessible = true }.invoke(nav) as? Boolean
-                    }.getOrNull() ?: true
+                    // Check drag progress to decide home vs recents.
+                    // mCalculator.getPer() returns 0.0–1.0 drag completion.
+                    val dragPer = runCatching {
+                        val calc = navClass.getDeclaredField("mCalculator")
+                            .apply { isAccessible = true }.get(nav)
+                        calc?.javaClass?.getDeclaredMethod("getPer")
+                            ?.apply { isAccessible = true }?.invoke(calc) as? Float
+                    }.getOrNull() ?: 0f
 
-                    if (isSafeArea) {
-                        // Short swipe → go home
-                        runCatching {
-                            navClass.getDeclaredMethod("checkAndLauncherHome")
-                                .apply { isAccessible = true }.invoke(nav)
-                        }
-                        fLog("Gate6c: direct HOME after UP msg $msgWhat (safe area)")
-                    } else {
-                        // Long swipe → go to recents
+                    fLog("Gate6c: UP msg $msgWhat dragPer=${"%.2f".format(dragPer)}")
+                    if (dragPer > 0.5f) {
+                        // Long drag → try recents
                         runCatching {
                             navClass.getDeclaredMethod("showRecents")
                                 .apply { isAccessible = true }.invoke(nav)
                         }
-                        fLog("Gate6c: direct RECENTS after UP msg $msgWhat (beyond safe area)")
+                        fLog("Gate6c: → showRecents (dragPer=${"%.2f".format(dragPer)} > 0.5)")
+                    } else {
+                        // Short drag → go home
+                        runCatching {
+                            navClass.getDeclaredMethod("checkAndLauncherHome")
+                                .apply { isAccessible = true }.invoke(nav)
+                        }
+                        fLog("Gate6c: → checkAndLauncherHome")
                     }
                 }
                 result
             }
-            fLog("LauncherHook: Gate 6c — AppWaitToDragState home/recents dispatch installed")
-        }.onFailure { log("LauncherHook: Gate 6c failed", it) }
+            fLog("LauncherHook: Gate 6c — home/recents dispatch installed")
+        }.onFailure { fLog("LauncherHook: Gate 6c failed ${it.message}") }
     }
 
     /**
