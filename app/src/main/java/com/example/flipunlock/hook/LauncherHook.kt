@@ -299,43 +299,34 @@ object LauncherHook : BaseHook() {
 
                     fLog("Gate6c: UP msg $msgWhat dragPer=${"%.2f".format(dragPer)}")
                     if (dragPer > 0.5f) {
-                        // Long drag → go to recents
-                        // showRecents() may fail due to executor issues, so also
-                        // directly transition launcher to OVERVIEW state
-                        val mLauncher = runCatching {
-                            navClass.getDeclaredField("mLauncher")
-                                .apply { isAccessible = true }.get(nav)
-                        }.getOrNull()
-                        var wentToRecents = false
-                        if (mLauncher != null) {
+                        // Long drag → recents. Strategy: go home first (works),
+                        // then after launcher is visible, transition to OVERVIEW.
+                        // This avoids the broken showRecents() executor.
+                        runCatching {
+                            navClass.getDeclaredMethod("checkAndLauncherHome")
+                                .apply { isAccessible = true }.invoke(nav)
+                        }
+                        // Post delayed: wait for launcher to come to foreground,
+                        // then go to OVERVIEW state
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                             runCatching {
-                                // LauncherState.OVERVIEW — enum constant
-                                val overviewState = param.classLoader
-                                    .loadClass("com.miui.home.launcher.LauncherState")
-                                    .getDeclaredField("OVERVIEW").get(null)
-                                // StateManager.getInstance().goToState(OVERVIEW, false)
-                                val stateMgrClass = param.classLoader
-                                    .loadClass("com.miui.home.launcher.LauncherStateManager")
-                                val goToState = stateMgrClass.methods.firstOrNull {
-                                    it.name == "goToState" && it.parameterCount == 2 &&
-                                    it.parameterTypes[1] == Boolean::class.javaPrimitiveType
-                                }
-                                if (goToState != null) {
-                                    goToState.invoke(stateMgrClass.getMethod("getInstance").invoke(null), overviewState, false)
-                                    wentToRecents = true
+                                val launcher = navClass.getDeclaredField("mLauncher")
+                                    .apply { isAccessible = true }.get(nav)
+                                if (launcher != null) {
+                                    // launcher.getStateManager().goToState(OVERVIEW, false)
+                                    val sm = launcher.javaClass.getMethod("getStateManager").invoke(launcher)
+                                    val lsClass = param.classLoader
+                                        .loadClass("com.miui.home.launcher.LauncherState")
+                                    val overview = lsClass.getDeclaredField("OVERVIEW").get(null)
+                                    // Find goToState method by iterating
+                                    sm.javaClass.methods.firstOrNull { m ->
+                                        m.name == "goToState" && m.parameterCount == 2 &&
+                                        m.parameterTypes[1] == Boolean::class.javaPrimitiveType
+                                    }?.invoke(sm, overview, false)
                                 }
                             }
-                        }
-                        if (!wentToRecents) {
-                            // Fallback: try showRecents or go home
-                            runCatching {
-                                navClass.getDeclaredMethod("showRecents")
-                                    .apply { isAccessible = true }.invoke(nav)
-                            }
-                            fLog("Gate6c: → showRecents (goToState not available)")
-                        } else {
-                            fLog("Gate6c: → recents (goToState OVERVIEW)")
-                        }
+                        }, 300L)
+                        fLog("Gate6c: → home+recents (delayed goToState)")
                     } else {
                         runCatching {
                             navClass.getDeclaredMethod("checkAndLauncherHome")
