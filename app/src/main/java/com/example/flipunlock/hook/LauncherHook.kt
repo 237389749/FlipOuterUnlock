@@ -45,6 +45,7 @@ object LauncherHook : BaseHook() {
             hookWaitingCallback(param)
             hookBypassRecentsAnimation(param)
             hookRecentsDisplayFilter(param)
+            hookAnotherDisplay(param)
             hookGestureDiagnostics(param)
         }
     }
@@ -340,6 +341,33 @@ object LauncherHook : BaseHook() {
             }
             fLog("LauncherHook: Gate 6c — home/recents dispatch installed")
         }.onFailure { fLog("LauncherHook: Gate 6c failed ${it.message}") }
+    }
+
+    /**
+     * Gate 8: Force isAnotherDisplay() → false.
+     *
+     * BaseRecentsImpl.activityResumed(Intent) calls isAnotherDisplay(intent)
+     * at line 176. If it returns true, the entire activity-resume callback is
+     * skipped: gesture window visibility NOT updated, back-gesture-break
+     * controller NOT reset, touch-by-swipe-status-bar NOT disabled.
+     *
+     * The check compares mContext.getDisplay().getDisplayId() against
+     * intent.getIntExtra("app_dc_displayid", ...). On the flip outer screen
+     * with state=6 (DUAL, outer=display 0), this mismatch can occur if the
+     * intent carries a different display ID from the app's original display.
+     *
+     * Fix: force false — always process activity resume events.
+     */
+    private fun hookAnotherDisplay(param: PackageReadyParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "com.miui.home.recents.BaseRecentsImpl")
+            val method = cls.getDeclaredMethod("isAnotherDisplay",
+                android.content.Intent::class.java)
+            method.isAccessible = true
+            hook(method, replaceResult(false))
+            fLog("LauncherHook: Gate 8 — isAnotherDisplay → false")
+        }.onFailure { fLog("LauncherHook: Gate 8 failed ${it.message}") }
     }
 
     /**
