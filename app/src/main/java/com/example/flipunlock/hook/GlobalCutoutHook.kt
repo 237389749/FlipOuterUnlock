@@ -24,21 +24,12 @@ object GlobalCutoutHook : BaseHook() {
             hookDisplayGetCutout(pkg)
             hookWindowInsetsGetCutout(pkg)
             hookFlipFoldedCutoutStub(param)
+            hookDisplayMetricsDiag(param)
         }
     }
 
     /**
      * DisplayCutoutStubImpl.isFlipFolded() → false.
-     *
-     * When true, MIUI framework methods modify view positions and cutout:
-     * - applyViewLocation(): shifts views by -bounds.left (causes left-shift!)
-     * - adaptDisplayCutoutWhenLayout(): modifies cutout rect for popups
-     * - processMotionEvent(): adjusts touch coordinates
-     * - sandboxDisplayInfoForFlip(): changes DisplayInfo dimensions
-     *
-     * SystemUI is excluded from DeviceIdentityHook (needs isFlipDevice=true),
-     * so isFlipFolded() returns true there. Combined with the physical fold
-     * state, this triggers unwanted layout adjustments.
      */
     private fun hookFlipFoldedCutoutStub(param: PackageReadyParam) {
         runCatching {
@@ -48,6 +39,30 @@ object GlobalCutoutHook : BaseHook() {
             hook(method, replaceResult(false))
             log("GlobalCutout: DisplayCutoutStubImpl.isFlipFolded → false")
         }.onFailure { log("GlobalCutout: isFlipFolded failed", it) }
+    }
+
+    /**
+     * Diagnostic: log DisplayMetrics and cutout from WindowManager for SystemUI.
+     */
+    private fun hookDisplayMetricsDiag(param: PackageReadyParam) {
+        if (param.packageName != "com.android.systemui") return
+        runCatching {
+            val wm = android.view.WindowManager::class.java
+            val method = wm.getDeclaredMethod("getCurrentWindowMetrics")
+            method.isAccessible = true
+            var done = false
+            hook(method) { chain ->
+                val result = chain.proceed()
+                if (!done) {
+                    done = true
+                    val bounds = result?.javaClass?.getDeclaredMethod("getBounds")?.invoke(result) as? android.graphics.Rect
+                    log("GlobalCutout DIAG: WindowMetrics bounds=$bounds")
+                    val dm = android.content.res.Resources.getSystem().displayMetrics
+                    log("GlobalCutout DIAG: system DisplayMetrics=${dm.widthPixels}x${dm.heightPixels} density=${dm.density}")
+                }
+                result
+            }
+        }.onFailure { log("GlobalCutout DIAG failed", it) }
     }
 
     private fun hookDisplayGetCutout(pkg: String) {
