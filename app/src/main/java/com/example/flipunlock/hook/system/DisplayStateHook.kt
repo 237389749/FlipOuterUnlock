@@ -194,6 +194,35 @@ object DisplayStateHook {
             }
             log("DisplayState: disableExternalDisplayLocked → blocked when outer screen")
         }.onFailure { log("DisplayState: disableExternalDisplayLocked failed", it) }
+
+        // §5. Fix letterbox: correct largestNominalAppWidth for outer screen.
+        //     LogicalDisplay sets largestNominalAppWidth=height (1392) instead of
+        //     width (1208) for ROTATION_180 displays, causing letterboxFullBounds
+        //     to be 1392px wide on a 1208px screen → content shifted left.
+        hookLargestAppWidth(param)
+    }
+
+    private fun hookLargestAppWidth(param: SystemServerStartingParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "com.android.server.display.LogicalDisplay")
+            // Hook getDisplayInfoLocked() → correct largestNominalAppWidth
+            val method = cls.getDeclaredMethod("getDisplayInfoLocked")
+            method.isAccessible = true
+            hook(method) { chain ->
+                val info = chain.proceed() as? android.view.DisplayInfo
+                // Fix: if largestNominalAppWidth > display width, clamp it
+                if (info != null && isOuterScreen()) {
+                    val realW = info.logicalWidth  // the current logical width
+                    if (info.largestNominalAppWidth > realW && realW > 0) {
+                        info.largestNominalAppWidth = realW
+                        log("DisplayState: clamped largestNominalAppWidth ${info.largestNominalAppWidth}→$realW")
+                    }
+                }
+                info
+            }
+            log("DisplayState: ✓ largestNominalAppWidth correction installed")
+        }.onFailure { log("DisplayState: largestNominalAppWidth failed", it) }
     }
 
     // ── 5. AOD on outer screen: prevent sleep + block dream timeouts ───
