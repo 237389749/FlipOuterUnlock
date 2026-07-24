@@ -23,7 +23,31 @@ object GlobalCutoutHook : BaseHook() {
         safeHook("GlobalCutout") {
             hookDisplayGetCutout(pkg)
             hookWindowInsetsGetCutout(pkg)
+            hookFlipFoldedCutoutStub(param)
         }
+    }
+
+    /**
+     * DisplayCutoutStubImpl.isFlipFolded() → false.
+     *
+     * When true, MIUI framework methods modify view positions and cutout:
+     * - applyViewLocation(): shifts views by -bounds.left (causes left-shift!)
+     * - adaptDisplayCutoutWhenLayout(): modifies cutout rect for popups
+     * - processMotionEvent(): adjusts touch coordinates
+     * - sandboxDisplayInfoForFlip(): changes DisplayInfo dimensions
+     *
+     * SystemUI is excluded from DeviceIdentityHook (needs isFlipDevice=true),
+     * so isFlipFolded() returns true there. Combined with the physical fold
+     * state, this triggers unwanted layout adjustments.
+     */
+    private fun hookFlipFoldedCutoutStub(param: PackageReadyParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass("android.view.DisplayCutoutStubImpl")
+            val method = cls.getDeclaredMethod("isFlipFolded")
+            method.isAccessible = true
+            hook(method, replaceResult(false))
+            log("GlobalCutout: DisplayCutoutStubImpl.isFlipFolded → false")
+        }.onFailure { log("GlobalCutout: isFlipFolded failed", it) }
     }
 
     private fun hookDisplayGetCutout(pkg: String) {
