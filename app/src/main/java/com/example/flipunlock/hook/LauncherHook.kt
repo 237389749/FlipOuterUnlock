@@ -438,6 +438,28 @@ object LauncherHook : BaseHook() {
             }
             fLog("LauncherHook: Gate 7 — removeOtherDisplayTask → no-op")
 
+            // Diagnostic: hook ActivityManagerWrapper.getRecentTasks to see
+            // what the system actually returns
+            runCatching {
+                val amwClass = param.classLoader.loadClass(
+                    "com.android.systemui.shared.recents.system.ActivityManagerWrapper")
+                val getRT = amwClass.getDeclaredMethod("getRecentTasks",
+                    Int::class.javaPrimitiveType!!,
+                    Int::class.javaPrimitiveType!!,
+                    Int::class.javaPrimitiveType!!)
+                getRT.isAccessible = true
+                var callCount = 0
+                hook(getRT) { chain ->
+                    callCount++
+                    val result = chain.proceed()
+                    val size = (result as? java.util.ArrayList<*>)?.size ?: -1
+                    if (callCount <= 10) {
+                        fLog("DIAG: AMW.getRecentTasks(flags=${chain.args[1]}, userId=${chain.args[2]}) → $size tasks")
+                    }
+                    result
+                }
+            }
+
             // Diagnostic: check task list size when recents view queries it
             runCatching {
                 val getTaskList = cls.getDeclaredMethod("getTaskList",
