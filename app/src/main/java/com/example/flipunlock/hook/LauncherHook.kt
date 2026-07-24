@@ -413,6 +413,24 @@ object LauncherHook : BaseHook() {
             }
             fLog("LauncherHook: Gate 7 — removeOtherDisplayTask → no-op")
 
+            // Diagnostic: check task list size when recents view queries it
+            runCatching {
+                val getTaskList = cls.getDeclaredMethod("getTaskList",
+                    Boolean::class.javaPrimitiveType!!)
+                getTaskList.isAccessible = true
+                var lastLoggedCount = -1
+                hook(getTaskList) { chain ->
+                    val result = chain.proceed()
+                    val tasks = result as? java.util.List<*>
+                    val count = tasks?.size ?: -1
+                    if (count != lastLoggedCount) {
+                        lastLoggedCount = count
+                        fLog("DIAG: RecentsModel.getTaskList → $count tasks ${if (count == 0) "★ EMPTY" else ""}")
+                    }
+                    result
+                }
+            }
+
             // Diagnostic: log task list size when recents is queried
             runCatching {
                 val getTaskList = cls.getDeclaredMethod("getTaskList",
