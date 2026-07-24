@@ -24,6 +24,7 @@ object GlobalCutoutHook : BaseHook() {
             hookDisplayGetCutout(pkg)
             hookWindowInsetsGetCutout(pkg)
             hookFlipFoldedCutoutStub(param)
+            hookSizeCompatScaleMode(param)
             hookDisplayMetricsDiag(param)
         }
     }
@@ -39,6 +40,38 @@ object GlobalCutoutHook : BaseHook() {
             hook(method, replaceResult(false))
             log("GlobalCutout: DisplayCutoutStubImpl.isFlipFolded → false")
         }.onFailure { log("GlobalCutout: isFlipFolded failed", it) }
+    }
+
+    /**
+     * ActivityThreadStub.inMiuiSizeCompatScaleMode() → false.
+     *
+     * SystemServicesHook forces getFlipCompatMode→0 (fullscreen) at the
+     * system_server level. But the app process still runs MIUI size-compat
+     * logic via inMiuiSizeCompatScaleMode(). When true:
+     *   - applyViewLocation() shifts views by -bounds.left
+     *   - processMotionEvent() adjusts touch coordinates
+     *   - updateSizeCompatBounds() modifies layout bounds
+     *
+     * By forcing false, we prevent the flip-specific view shifting that
+     * causes popups/toasts to appear off-center (shifted left).
+     */
+    private fun hookSizeCompatScaleMode(param: PackageReadyParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass("android.app.ActivityThreadImpl")
+            val method = cls.getDeclaredMethod("inMiuiSizeCompatScaleMode")
+            method.isAccessible = true
+            hook(method, replaceResult(false))
+            log("GlobalCutout: inMiuiSizeCompatScaleMode → false")
+        }.onFailure { log("GlobalCutout: inMiuiSizeCompatScaleMode failed", it) }
+
+        // Also neutralize getSizeCompatBounds → null to prevent any bounds-based shifting
+        runCatching {
+            val cls = param.classLoader.loadClass("android.app.ActivityThreadImpl")
+            val method = cls.getDeclaredMethod("getSizeCompatBounds")
+            method.isAccessible = true
+            hook(method, replaceResult(null))
+            log("GlobalCutout: getSizeCompatBounds → null")
+        }.onFailure { log("GlobalCutout: getSizeCompatBounds failed", it) }
     }
 
     /**
