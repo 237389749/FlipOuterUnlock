@@ -250,16 +250,28 @@ object LauncherHook : BaseHook() {
             fLog("LauncherHook: Gate 6a — isNeedStopBecauseRecentsRemoteAnimStartFailed → false")
         }.onFailure { fLog("LauncherHook: Gate 6a failed ${it.message}") }
 
-        // 6b. Hook performAppToHome → go home directly, skip broken animation
+        // 6b. Hook performAppToHome → go home directly, skip broken animation.
+        //     Also restore haptic feedback (vibration) that the original method
+        //     provides at line 3773 — our bypass was silently dropping it.
         runCatching {
             val method = navClass.getDeclaredMethod("performAppToHome")
             method.isAccessible = true
             hook(method) { chain ->
-                fLog("Gate6b: performAppToHome → direct home")
+                fLog("Gate6b: performAppToHome → direct home + haptic")
+                val nav = chain.thisObject
+                // Trigger haptic feedback — original performAppToHome calls
+                // HapticFeedbackCompat.getInstance().performHomeGestureAccessibilitySwitch(this)
+                runCatching {
+                    val hapticClass = param.classLoader.loadClass(
+                        "com.miui.home.common.hapticfeedback.HapticFeedbackCompat")
+                    val instance = hapticClass.getDeclaredMethod("getInstance").invoke(null)
+                    hapticClass.getDeclaredMethod("performHomeGestureAccessibilitySwitch",
+                        android.view.View::class.java).invoke(instance, nav)
+                }
+                // Go home
                 runCatching {
                     navClass.getDeclaredMethod("checkAndLauncherHome")
-                        .apply { isAccessible = true }
-                        .invoke(chain.thisObject)
+                        .apply { isAccessible = true }.invoke(nav)
                 }
                 null  // Skip original — don't go through finishController
             }
