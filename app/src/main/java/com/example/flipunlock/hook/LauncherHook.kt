@@ -311,6 +311,10 @@ object LauncherHook : BaseHook() {
                             ?.apply { isAccessible = true }?.invoke(calc) as? Float
                     }.getOrNull() ?: 0f
 
+                    // Trigger haptic feedback — normally done by performAppToHome()
+                    // at line 3773, which our bypass skips. Do it here instead.
+                    triggerHaptic(param, nav)
+
                     fLog("Gate6c: UP msg $msgWhat dragPer=${"%.2f".format(dragPer)}")
                     if (dragPer > 0.5f) {
                         // Long drag → recents. Strategy: go home first (works),
@@ -494,5 +498,24 @@ object LauncherHook : BaseHook() {
 
         // onSystemUiFlagsChanged is already hooked by hookDisableHomeRecents (Gate 4).
         // Don't double-hook — the existing hook forces mDisableHomeRecents=false.
+    }
+
+    /**
+     * Trigger haptic feedback for bottom gesture completion.
+     *
+     * Original path: performAppToHome() line 3773 calls:
+     *   HapticFeedbackCompat.getInstance().performHomeGestureAccessibilitySwitch(this)
+     *
+     * Our Gate 6b/6c bypass skips performAppToHome(), so we call haptic
+     * directly before checkAndLauncherHome() or showRecents().
+     */
+    private fun triggerHaptic(param: PackageReadyParam, nav: Any) {
+        runCatching {
+            val hapticClass = param.classLoader.loadClass(
+                "com.miui.home.common.hapticfeedback.HapticFeedbackCompat")
+            val instance = hapticClass.getDeclaredMethod("getInstance").invoke(null)
+            hapticClass.getDeclaredMethod("performHomeGestureAccessibilitySwitch",
+                android.view.View::class.java).invoke(instance, nav)
+        }
     }
 }
