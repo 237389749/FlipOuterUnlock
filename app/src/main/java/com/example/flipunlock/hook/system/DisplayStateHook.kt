@@ -206,17 +206,23 @@ object DisplayStateHook {
         runCatching {
             val cls = param.classLoader.loadClass(
                 "com.android.server.display.LogicalDisplay")
-            // Hook getDisplayInfoLocked() → correct largestNominalAppWidth
+            val displayInfoClass = param.classLoader.loadClass(
+                "android.view.DisplayInfo")
+            val logicalWField = displayInfoClass.getDeclaredField("logicalWidth")
+            logicalWField.isAccessible = true
+            val largestWField = displayInfoClass.getDeclaredField("largestNominalAppWidth")
+            largestWField.isAccessible = true
+
             val method = cls.getDeclaredMethod("getDisplayInfoLocked")
             method.isAccessible = true
             hook(method) { chain ->
-                val info = chain.proceed() as? android.view.DisplayInfo
-                // Fix: if largestNominalAppWidth > display width, clamp it
-                if (info != null && isOuterScreen()) {
-                    val realW = info.logicalWidth  // the current logical width
-                    if (info.largestNominalAppWidth > realW && realW > 0) {
-                        info.largestNominalAppWidth = realW
-                        log("DisplayState: clamped largestNominalAppWidth ${info.largestNominalAppWidth}→$realW")
+                val info = chain.proceed() ?: return@hook null
+                if (isOuterScreen()) {
+                    val realW = logicalWField.getInt(info)
+                    val largestW = largestWField.getInt(info)
+                    if (largestW > realW && realW > 0) {
+                        largestWField.setInt(info, realW)
+                        log("DisplayState: clamped largestNominalAppWidth $largestW→$realW")
                     }
                 }
                 info
