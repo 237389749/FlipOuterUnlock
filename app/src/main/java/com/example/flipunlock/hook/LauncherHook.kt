@@ -324,19 +324,33 @@ object LauncherHook : BaseHook() {
                             navClass.getDeclaredMethod("checkAndLauncherHome")
                                 .apply { isAccessible = true }.invoke(nav)
                         }
-                        // Post delayed: wait for launcher to come to foreground,
-                        // then go to OVERVIEW state
+                        // Post delayed: wait for launcher to come to foreground.
+                        // First force a task list refresh (like edit mode does),
+                        // then go to OVERVIEW state.
                         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            runCatching {
+                                // Force task list reload — same effect as
+                                // entering/exiting edit mode on the launcher.
+                                // Fixes the pre-existing MIUI bug where recents
+                                // shows empty on the outer screen.
+                                val rmClass = param.classLoader.loadClass(
+                                    "com.miui.home.recents.RecentsModel")
+                                val rmInstance = rmClass.getDeclaredMethod("getInstance",
+                                    android.content.Context::class.java)
+                                    .invoke(null, (nav as android.view.View).context)
+                                rmClass.getDeclaredMethod("notifyRecentTasksChanged")
+                                    .apply { isAccessible = true }.invoke(rmInstance)
+                                fLog("Gate6c: notifyRecentTasksChanged → reloaded")
+                            }
+                            // Then transition to OVERVIEW
                             runCatching {
                                 val launcher = navClass.getDeclaredField("mLauncher")
                                     .apply { isAccessible = true }.get(nav)
                                 if (launcher != null) {
-                                    // launcher.getStateManager().goToState(OVERVIEW, false)
                                     val sm = launcher.javaClass.getMethod("getStateManager").invoke(launcher)
                                     val lsClass = param.classLoader
                                         .loadClass("com.miui.home.launcher.LauncherState")
                                     val overview = lsClass.getDeclaredField("OVERVIEW").get(null)
-                                    // Find goToState method by iterating
                                     sm.javaClass.methods.firstOrNull { m ->
                                         m.name == "goToState" && m.parameterCount == 2 &&
                                         m.parameterTypes[1] == Boolean::class.javaPrimitiveType
