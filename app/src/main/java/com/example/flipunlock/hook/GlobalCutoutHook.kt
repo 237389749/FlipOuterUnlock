@@ -19,27 +19,28 @@ object GlobalCutoutHook : BaseHook() {
 
     override fun hook(param: PackageReadyParam) {
         if (!Config.displayCutout) return
+        val pkg = param.packageName
         safeHook("GlobalCutout") {
-            hookDisplayGetCutout()
-            hookWindowInsetsGetCutout()
+            hookDisplayGetCutout(pkg)
+            hookWindowInsetsGetCutout(pkg)
         }
     }
 
-    private fun hookDisplayGetCutout() {
+    private fun hookDisplayGetCutout(pkg: String) {
         runCatching {
             val method = Display::class.java.method("getCutout")
             val zero = getZeroCutout() ?: return
             hook(method) { zero }
-            log("GlobalCutout: Display.getCutout → NO_CUTOUT for ${param.packageName}")
+            log("GlobalCutout: Display.getCutout → NO_CUTOUT for $pkg")
         }.onFailure { log("GlobalCutout: Display.getCutout failed", it) }
     }
 
-    private fun hookWindowInsetsGetCutout() {
+    private fun hookWindowInsetsGetCutout(pkg: String) {
         runCatching {
             val method = android.view.WindowInsets::class.java.getDeclaredMethod("getDisplayCutout")
             method.isAccessible = true
             hook(method, replaceResult(null))
-            log("GlobalCutout: WindowInsets.getDisplayCutout → null for ${param.packageName}")
+            log("GlobalCutout: WindowInsets.getDisplayCutout → null for $pkg")
         }.onFailure { log("GlobalCutout: WindowInsets.getDisplayCutout failed", it) }
     }
 
