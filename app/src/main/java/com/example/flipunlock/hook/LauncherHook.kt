@@ -324,25 +324,34 @@ object LauncherHook : BaseHook() {
                             navClass.getDeclaredMethod("checkAndLauncherHome")
                                 .apply { isAccessible = true }.invoke(nav)
                         }
-                        // Post delayed: wait for launcher to come to foreground.
-                        // First force a task list refresh (like edit mode does),
-                        // then go to OVERVIEW state.
+                        // Post delayed: wait for launcher foreground.
+                        // Phase 1 (300ms): reload task list from system
+                        // Phase 2 (800ms): transition to OVERVIEW after tasks arrive
+                        val ctx = (nav as android.view.View).context
+                        val rmClass = param.classLoader.loadClass(
+                            "com.miui.home.recents.RecentsModel")
+                        val rmInstance = rmClass.getDeclaredMethod("getInstance",
+                            android.content.Context::class.java)
+                            .invoke(null, ctx)
+
                         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            // Phase 1: reload task list
                             runCatching {
-                                // Force task list reload — same effect as
-                                // entering/exiting edit mode on the launcher.
-                                // Fixes the pre-existing MIUI bug where recents
-                                // shows empty on the outer screen.
-                                val rmClass = param.classLoader.loadClass(
-                                    "com.miui.home.recents.RecentsModel")
-                                val rmInstance = rmClass.getDeclaredMethod("getInstance",
-                                    android.content.Context::class.java)
-                                    .invoke(null, (nav as android.view.View).context)
                                 rmClass.getDeclaredMethod("notifyRecentTasksChanged")
                                     .apply { isAccessible = true }.invoke(rmInstance)
                                 fLog("Gate6c: notifyRecentTasksChanged → reloaded")
                             }
-                            // Then transition to OVERVIEW
+                        }, 300L)
+
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            // Phase 2: check task count + transition to OVERVIEW
+                            val taskCount = runCatching {
+                                val taskList = rmClass.getDeclaredMethod("getTaskList",
+                                    Boolean::class.javaPrimitiveType!!)
+                                    .invoke(rmInstance, false) as? java.util.List<*>
+                                taskList?.size ?: -1
+                            }.getOrNull() ?: -1
+                            fLog("Gate6c: taskList size=$taskCount before goToState")
                             runCatching {
                                 val launcher = navClass.getDeclaredField("mLauncher")
                                     .apply { isAccessible = true }.get(nav)
@@ -357,7 +366,7 @@ object LauncherHook : BaseHook() {
                                     }?.invoke(sm, overview, false)
                                 }
                             }
-                        }, 300L)
+                        }, 800L)
                         fLog("Gate6c: → home+recents (delayed goToState)")
                     } else {
                         runCatching {
