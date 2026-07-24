@@ -9,6 +9,7 @@ import com.example.flipunlock.hook.AodHook
 //import com.example.flipunlock.hook.CameraHook  // TODO: not working
 import com.example.flipunlock.hook.CutoutHook
 import com.example.flipunlock.hook.DeviceIdentityHook
+import com.example.flipunlock.hook.GlobalCutoutHook
 import com.example.flipunlock.hook.WatchOverlayHook
 import com.example.flipunlock.hook.ScreenTypeHook
 import com.example.flipunlock.hook.SystemUIHook
@@ -36,6 +37,7 @@ class Main : XposedModule() {
     private val hooks = listOf(
         ScreenTypeHook,  // Configuration.getScreenType → 0
         DeviceIdentityHook,  // IS_FLIP / isFlipDevice / isFoldDevice → false
+        GlobalCutoutHook,  // Display.getCutout + WindowInsets.getDisplayCutout → zero (all apps)
         AodHook,  // v2.3: screen state fix + FlipLinkageStyleController
 //        CameraHook,  // TODO: front camera redirect not working — HAL reports all cameras as LENS_FACING_BACK
         CutoutHook,
