@@ -402,6 +402,8 @@ object LauncherHook : BaseHook() {
         runCatching {
             val cls = param.classLoader.loadClass(
                 "com.miui.home.recents.RecentsModel")
+
+            // Gate 7: removeOtherDisplayTask → no-op
             val method = cls.getDeclaredMethod("removeOtherDisplayTask",
                 java.util.List::class.java)
             method.isAccessible = true
@@ -410,6 +412,23 @@ object LauncherHook : BaseHook() {
                 null
             }
             fLog("LauncherHook: Gate 7 — removeOtherDisplayTask → no-op")
+
+            // Diagnostic: log task list size when recents is queried
+            runCatching {
+                val getTaskList = cls.getDeclaredMethod("getTaskList",
+                    Boolean::class.javaPrimitiveType!!)
+                getTaskList.isAccessible = true
+                var lastLoggedCount = -1
+                hook(getTaskList) { chain ->
+                    val result = chain.proceed()
+                    val count = (result as? java.util.List<*>)?.size ?: -1
+                    if (count != lastLoggedCount) {
+                        lastLoggedCount = count
+                        fLog("DIAG: RecentsModel.getTaskList → $count tasks")
+                    }
+                    result
+                }
+            }
         }.onFailure { fLog("LauncherHook: Gate 7 failed ${it.message}") }
     }
 
