@@ -204,16 +204,20 @@ object DisplayStateHook {
 
     private fun hookLargestAppWidth(param: SystemServerStartingParam) {
         runCatching {
-            val cls = param.classLoader.loadClass(
+            val ldClass = param.classLoader.loadClass(
                 "com.android.server.display.LogicalDisplay")
             val displayInfoClass = param.classLoader.loadClass(
                 "android.view.DisplayInfo")
+
             val logicalWField = displayInfoClass.getDeclaredField("logicalWidth")
             logicalWField.isAccessible = true
             val largestWField = displayInfoClass.getDeclaredField("largestNominalAppWidth")
             largestWField.isAccessible = true
+            val overrideField = ldClass.getDeclaredField("mOverrideDisplayInfo")
+            overrideField.isAccessible = true
 
-            val method = cls.getDeclaredMethod("getDisplayInfoLocked")
+            // Hook getDisplayInfoLocked: correct the returned copy AND the stored override
+            val method = ldClass.getDeclaredMethod("getDisplayInfoLocked")
             method.isAccessible = true
             hook(method) { chain ->
                 val info = chain.proceed() ?: return@hook null
@@ -221,7 +225,13 @@ object DisplayStateHook {
                     val realW = logicalWField.getInt(info)
                     val largestW = largestWField.getInt(info)
                     if (largestW > realW && realW > 0) {
+                        // Fix returned copy
                         largestWField.setInt(info, realW)
+                        // Also fix the stored mOverrideDisplayInfo so dumpsys sees it
+                        val override = overrideField.get(chain.thisObject)
+                        if (override != null) {
+                            largestWField.setInt(override, realW)
+                        }
                         log("DisplayState: clamped largestNominalAppWidth $largestW→$realW")
                     }
                 }
