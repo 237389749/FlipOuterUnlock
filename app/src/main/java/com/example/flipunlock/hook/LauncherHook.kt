@@ -516,6 +516,7 @@ object LauncherHook : BaseHook() {
             val instance = hapticClass.getDeclaredMethod("getInstance").invoke(null)
             hapticClass.getDeclaredMethod("performHomeGestureAccessibilitySwitch",
                 android.view.View::class.java).invoke(instance, nav)
-        }
+            fLog("haptic: ✓ performHomeGestureAccessibilitySwitch")
+        }.onFailure { fLog("haptic: FAILED — ${it.message}") }
     }
 }
