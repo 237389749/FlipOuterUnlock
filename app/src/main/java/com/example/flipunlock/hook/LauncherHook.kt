@@ -399,9 +399,11 @@ object LauncherHook : BaseHook() {
      * of display ID. There's only one active display in state=6 anyway.
      */
     private fun hookRecentsDisplayFilter(param: PackageReadyParam) {
+        fLog("LauncherHook: Gate 7 — entering hookRecentsDisplayFilter")
         runCatching {
             val cls = param.classLoader.loadClass(
                 "com.miui.home.recents.RecentsModel")
+            fLog("LauncherHook: Gate 7 — RecentsModel loaded")
 
             // Gate 7: removeOtherDisplayTask → no-op
             val method = cls.getDeclaredMethod("removeOtherDisplayTask",
