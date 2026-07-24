@@ -47,48 +47,38 @@ object CutoutHook : BaseHook() {
         runCatching {
             val parserClass = classLoader.loadClass("android.view.CutoutSpecification\$Parser")
             val parseMethod = parserClass.method("parse", String::class.java)
-            // afterHookedMethod: modify parse result in-place
+            // Zero out ALL cutout specs unconditionally.
+            // Previously only filtered specific strings ("M 604,664", "@bind_right_cutout")
+            // which missed other cutout sources (config_mainBuiltInDisplayCutout, etc.)
             hook(parseMethod, after { chain, result ->
                 val spec = result ?: return@after result
-                val originalSpec = chain.args[0] as? String ?: return@after result
-                if (originalSpec.contains("M 604,664") || originalSpec.contains("@bind_right_cutout")) {
-                    spec.setField("mLeftBound", Rect(0, 0, 0, 0))
-                    spec.setField("mTopBound", Rect(0, 0, 0, 0))
-                    spec.setField("mRightBound", Rect(0, 0, 0, 0))
-                    spec.setField("mBottomBound", Rect(0, 0, 0, 0))
-                    spec.setField("mInsets", Insets.of(0, 0, 0, 0))
-                    spec.setField("mPath", Path())
-                }
+                spec.setField("mLeftBound", Rect(0, 0, 0, 0))
+                spec.setField("mTopBound", Rect(0, 0, 0, 0))
+                spec.setField("mRightBound", Rect(0, 0, 0, 0))
+                spec.setField("mBottomBound", Rect(0, 0, 0, 0))
+                spec.setField("mInsets", Insets.of(0, 0, 0, 0))
+                spec.setField("mPath", Path())
                 result
             })
         }.onFailure { log("CutoutFix: failed hook parser", it) }
 
-        // Hook computeSafeInsets — intercept right-edge safe inset calculation
+        // Hook computeSafeInsets — return 0 for all edges unconditionally
         runCatching {
             val parserClass = classLoader.loadClass("android.view.CutoutSpecification\$Parser")
             val method = parserClass.getDeclaredMethod("computeSafeInsets",
                 Int::class.javaPrimitiveType!!,
                 android.graphics.Rect::class.java)
             method.isAccessible = true
-            hook(method) { chain ->
-                val gravity = chain.args[0] as? Int ?: return@hook chain.proceed()
-                if (gravity == 5) {  // 5 = RIGHT edge
-                    log("CutoutFix: computeSafeInsets(gravity=5) → 0")
-                    0
-                } else {
-                    chain.proceed()
-                }
-            }
+            hook(method) { 0 }  // Always return 0 — no safe inset for any edge
         }.onFailure { log("CutoutFix: failed hook computeSafeInsets", it) }
     }
 
     // Hook DisplayCutout.pathAndDisplayCutoutFromSpec — THE single choke point
     // where ALL cutout strings (resource-loaded or direct-spec) are parsed.
-    // Blocking here skips the entire Parser → CutoutSpecification → DisplayCutout pipeline.
+    // Return (null, NO_CUTOUT) unconditionally to block ALL cutouts.
     private fun hookPathAndDisplayCutoutFromSpec(classLoader: ClassLoader) {
         runCatching {
             val dcClass = classLoader.loadClass("android.view.DisplayCutout")
-            // private static Pair<Path, DisplayCutout> pathAndDisplayCutoutFromSpec(...)
             val method = dcClass.declaredMethods.firstOrNull {
                 it.name == "pathAndDisplayCutoutFromSpec" && it.parameterCount == 9
             } ?: return@runCatching
@@ -98,15 +88,9 @@ object CutoutHook : BaseHook() {
             val pairClass = classLoader.loadClass("android.util.Pair")
             val pairCtor = pairClass.getConstructor(Any::class.java, Any::class.java)
 
-            hook(method, Hooker { chain ->
-                val pathSpec = chain.args[0] as? String ?: ""
-                if (pathSpec.contains("@bind_right_cutout") || pathSpec.contains("M 604,664")) {
-                    log("CutoutFix: blocked outer screen cutout at pathAndDisplayCutoutFromSpec")
-                    pairCtor.newInstance(null, noCutout) // Pair(null, NO_CUTOUT)
-                } else {
-                    chain.proceed()
-                }
-            })
+            hook(method) {
+                pairCtor.newInstance(null, noCutout) // Pair(null, NO_CUTOUT) — always
+            }
         }.onFailure { log("CutoutFix: failed hook pathAndDisplayCutoutFromSpec", it) }
     }
 
