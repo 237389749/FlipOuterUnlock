@@ -204,41 +204,40 @@ object DisplayStateHook {
 
     private fun hookLargestAppWidth(param: SystemServerStartingParam) {
         runCatching {
-            val ldClass = param.classLoader.loadClass(
-                "com.android.server.display.LogicalDisplay")
-            val displayInfoClass = param.classLoader.loadClass(
-                "android.view.DisplayInfo")
+            // Hook AppCompatLetterboxPolicy.getLetterboxDetails() to clamp
+            // letterboxOuterBounds to the CURRENT display dimensions, not the
+            // max-across-rotations (largestNominalAppWidth).
+            val cls = param.classLoader.loadClass(
+                "com.android.server.wm.AppCompatLetterboxPolicy")
+            val displayContentClass = param.classLoader.loadClass(
+                "com.android.server.wm.DisplayContent")
 
-            val logicalWField = displayInfoClass.getDeclaredField("logicalWidth")
-            logicalWField.isAccessible = true
-            val largestWField = displayInfoClass.getDeclaredField("largestNominalAppWidth")
-            largestWField.isAccessible = true
-            val overrideField = ldClass.getDeclaredField("mOverrideDisplayInfo")
-            overrideField.isAccessible = true
-
-            // Hook getDisplayInfoLocked: correct the returned copy AND the stored override
-            val method = ldClass.getDeclaredMethod("getDisplayInfoLocked")
+            val method = cls.getDeclaredMethod("getLetterboxDetails")
             method.isAccessible = true
             hook(method) { chain ->
-                val info = chain.proceed() ?: return@hook null
-                if (isOuterScreen()) {
-                    val realW = logicalWField.getInt(info)
-                    val largestW = largestWField.getInt(info)
-                    if (largestW > realW && realW > 0) {
-                        // Fix returned copy
-                        largestWField.setInt(info, realW)
-                        // Also fix the stored mOverrideDisplayInfo so dumpsys sees it
-                        val override = overrideField.get(chain.thisObject)
-                        if (override != null) {
-                            largestWField.setInt(override, realW)
-                        }
-                        log("DisplayState: clamped largestNominalAppWidth $largestW→$realW")
+                val result = chain.proceed()  // LetterboxDetails or null
+                if (result != null && isOuterScreen()) {
+                    // Get current display dimensions from the activity's DisplayContent
+                    val activityRecord = cls.getDeclaredField("mActivityRecord")
+                        .apply { isAccessible = true }.get(chain.thisObject)
+                    val dc = activityRecord.javaClass.getMethod("getDisplayContent").invoke(activityRecord)
+                    val displayInfo = displayContentClass.getMethod("getDisplayInfo").invoke(dc)
+                    val curW = displayInfo.javaClass.getDeclaredField("logicalWidth")
+                        .apply { isAccessible = true }.getInt(displayInfo)
+
+                    // Clamp outerBounds (letterboxFullBounds) width to current display width
+                    val detailsClass = result.javaClass
+                    val outerBounds = detailsClass.getDeclaredField("letterboxFullBounds")
+                        .apply { isAccessible = true }.get(result) as? android.graphics.Rect
+                    if (outerBounds != null && outerBounds.width() > curW) {
+                        outerBounds.right = outerBounds.left + curW
+                        log("DisplayState: clamped letterboxFullBounds width to $curW")
                     }
                 }
-                info
+                result
             }
-            log("DisplayState: ✓ largestNominalAppWidth correction installed")
-        }.onFailure { log("DisplayState: largestNominalAppWidth failed", it) }
+            log("DisplayState: ✓ letterboxFullBounds correction installed")
+        }.onFailure { log("DisplayState: letterboxFullBounds failed", it) }
     }
 
     // ── 5. AOD on outer screen: prevent sleep + block dream timeouts ───
