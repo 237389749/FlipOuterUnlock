@@ -62,14 +62,23 @@ object CutoutHook : BaseHook() {
             })
         }.onFailure { log("CutoutFix: failed hook parser", it) }
 
-        // Hook computeSafeInsets — return 0 for all edges unconditionally
+        // Hook computeSafeInsets — zero both return value AND the out-Rect.
+        // computeSafeInsets takes (int rotation, Rect outRect): fills outRect
+        // with safe insets (left, top, right, bottom) and returns edge count.
+        // The old hook only zeroed return value — callers read the non-zero
+        // values from outRect, causing hints/toasts to shift left as if a
+        // right-side cutout were still present.
         runCatching {
             val parserClass = classLoader.loadClass("android.view.CutoutSpecification\$Parser")
             val method = parserClass.getDeclaredMethod("computeSafeInsets",
                 Int::class.javaPrimitiveType!!,
                 android.graphics.Rect::class.java)
             method.isAccessible = true
-            hook(method) { 0 }  // Always return 0 — no safe inset for any edge
+            hook(method) { chain ->
+                val outRect = chain.args[1] as? android.graphics.Rect
+                outRect?.setEmpty()  // zero all four edges
+                0  // no edges have safe insets
+            }
         }.onFailure { log("CutoutFix: failed hook computeSafeInsets", it) }
     }
 
