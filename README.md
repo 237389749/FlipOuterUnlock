@@ -5,9 +5,9 @@
 > Make the MIX Flip outer screen behave like a normal phone display.
 > 让 MIX Flip 外屏像普通手机屏幕一样工作。
 
-**一句话**：LSPosed 模块，去除外屏挖孔、全屏显示、解除应用限制、自由切换输入法、解除强制 Sogou 锁定、修复输入法工具栏、伪装设备身份。
+**一句话**：LSPosed 模块，去除外屏挖孔、全屏显示、解除应用限制、控制中心样式恢复、最近任务长按菜单、自由切换输入法、解除强制 Sogou 锁定、修复输入法工具栏、伪装设备身份。
 
-**One-liner**: LSPosed module — removes outer screen cutout, forces fullscreen, unlocks apps, frees IME choice (no forced Sogou), enables landscape keyboard, fixes Sogou toolbar, spoofs device identity.
+**One-liner**: LSPosed module — removes outer screen cutout, forces fullscreen, unlocks apps, restores control center style, adds recents long-press menu, frees IME choice (no forced Sogou), fixes Sogou toolbar, spoofs device identity.
 
 [English](#english) | [中文](#chinese)
 
@@ -46,9 +46,11 @@ LSPosed module for Xiaomi MIX Flip / MIX Flip 2 — unlock the outer display.
 **SystemUI**
 - Widget overlay disabled — 4-layer defense in fliphome process
 - SystemUI-side widget suppression — hides decor window
+- Control center style restored — hooks plugin classloader to replace COMPACT with VERTICAL layout, enables QS tile long-press, fixes device center card layout (v2.7)
 - Notification menu fix — restores long-press menu via `isTinyScreen` scope faking
 - Status bar clock hidden on outer screen
 - Status bar icon expansion — shows up to 8 notification icons
+- Recents task long-press menu — lock/unlock + app info popup on fliphome recents view (v2.7)
 - System gestures (back) — blocks fliphome FlipLauncher, keeps GestureStubView edge back
 - System gestures (home/recents) — fixes miuihome NavStubView 3-gate: fold removal, hideGestureLine, default-home check
 - Always-On Display enabled on outer screen when folded (v2.3 — screen state fix)
@@ -83,9 +85,11 @@ reboot
 | `persist.flipunlock.gesture.back` | true | Back gestures: disable FlipLauncher (GestureHook) |
 | `persist.flipunlock.ui.lockscreen` | true | Lock screen large layout (LockScreenHook) |
 | `persist.flipunlock.ui.widget` | true | Disable widget overlay (WatchOverlayHook) |
+| `persist.flipunlock.ui.controlcenter` | true | Control center style restore (ControlCenterHook) |
+| `persist.flipunlock.ui.recentsmenu` | true | Recents long-press menu (RecentsMenuHook) |
 | `persist.flipunlock.ime` | true | Input method freedom (InputMethodHook + Sogou) |
 
-**Coupling**: `gesture.home` and `gesture.back` should be kept together (both ON or both OFF). `display.aod` depends on `display.dual`. Module logs warnings at startup if mismatched. `display.cutout`, `ui.widget`, `ime` are independent.
+**Coupling**: `gesture.home` and `gesture.back` should be kept together (both ON or both OFF). `display.aod` depends on `display.dual`. Module logs warnings at startup if mismatched. `display.cutout`, `ui.widget`, `ui.controlcenter`, `ui.recentsmenu`, `ime` are independent.
 
 ### Hook Architecture
 
@@ -107,11 +111,13 @@ onPackageReady:
 ├── ScreenTypeHook [*]          → getScreenType → 0 (EXPAND)
 ├── AodHook [systemui, aod]     → v2.3: screen state fix + FlipLinkageStyleController
 ├── CameraHook [camera]         → v2: dynamic LENS_FACING enumeration (disabled)
+├── ControlCenterHook [systemui] → v2.7: plugin style COMPACT→VERTICAL + tile long-press + device center
 ├── CutoutHook [systemui, aod, camera]
 ├── SystemUIHook [systemui]     → widget decor, notification, clock, icons, NavigationBar force
 ├── GestureHook [fliphome]      → disable FlipLauncher + block start pages
 ├── LauncherHook [miui.home]    → 3-gate NavStubView fix: fold + hideLine + defaultHome
 ├── LockScreenHook [systemui]   → lock screen large layout: isTinyScreen/FlipTinyScreen/Instant toggles
+├── RecentsMenuHook [fliphome]  → v2.7: task long-press → popup (lock/unlock + app info)
 ├── WatchOverlayHook [fliphome] → 5-layer widget defense: root getWatchOverlay()→null + 4 layers
 ├── SogouInputHook [sogou]      → toolbar + clipboard (DexKit)
 └── ActivityLifecycleHook [*]   → layoutInDisplayCutoutMode=ALWAYS
@@ -200,9 +206,11 @@ AGPL-3.0
 **SystemUI**
 - Widget 覆盖层 4 层禁用
 - SystemUI 侧 widget 隐藏
+- 控制中心样式恢复 — hook 插件 ClassLoader，COMPACT 布局 → VERTICAL，恢复 QS tile 长按，修复设备中心卡片（v2.7）
 - 通知菜单修复
 - 外屏状态栏时钟隐藏
 - 通知图标扩展到 8 个
+- 最近任务长按菜单 — 外屏最近任务长按弹出锁定/解锁 + 应用信息（v2.7）
 - 系统手势（返回） — 禁用 fliphome FlipLauncher，保留 GestureStubView 边缘返回
 - 系统手势（Home/Recents） — 修复 miuihome NavStubView 三道门控：折叠移除、hideGestureLine、默认桌面检查
 - 折叠状态下外屏 AOD 启用（v2.3 — 屏幕状态修复）
@@ -237,9 +245,11 @@ reboot
 | `persist.flipunlock.gesture.back` | true | 返回手势（GestureHook：禁用 FlipLauncher） |
 | `persist.flipunlock.ui.lockscreen` | true | 锁屏大屏样式（LockScreenHook） |
 | `persist.flipunlock.ui.widget` | true | 禁用外屏小部件（WatchOverlayHook） |
+| `persist.flipunlock.ui.controlcenter` | true | 控制中心样式恢复（ControlCenterHook） |
+| `persist.flipunlock.ui.recentsmenu` | true | 最近任务长按菜单（RecentsMenuHook） |
 | `persist.flipunlock.ime` | true | 输入法自由切换（InputMethodHook + Sogou） |
 
-**耦合**：`gesture.home` 与 `gesture.back` 建议保持同开同关。`display.aod` 依赖 `display.dual`。模块启动时若有冲突会打印 `⚠` 警告。`display.cutout`、`ui.widget`、`ime` 三者独立。
+**耦合**：`gesture.home` 与 `gesture.back` 建议保持同开同关。`display.aod` 依赖 `display.dual`。模块启动时若有冲突会打印 `⚠` 警告。`display.cutout`、`ui.widget`、`ui.controlcenter`、`ui.recentsmenu`、`ime` 均独立。
 
 ### 要求
 
