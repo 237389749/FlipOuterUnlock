@@ -42,6 +42,7 @@ object DisplayStateHook {
             hookDisplayInfoForStateToClosed(param)
             hookDisplayEnabledLocked(param)
             hookExternalDisplayDisable(param)
+            hookDisplayInfoCutoutZero(param)
             hookAodOuterScreen(param)
         }
     }
@@ -238,6 +239,34 @@ object DisplayStateHook {
             }
             log("DisplayState: ✓ letterboxFullBounds correction installed")
         }.onFailure { log("DisplayState: letterboxFullBounds failed", it) }
+    }
+
+    // ── §6. DisplayInfo.displayCutout → NO_CUTOUT ──────────────────────
+    //
+    // LogicalDisplay.getDisplayInfoLocked() is THE gateway for DisplayInfo
+    // in system_server. Every window layout, IME frame computation, and
+    // insets calculation reads DisplayInfo from here. The boot-time
+    // DisplayInfo has a real cutout with safeInsetRight=124 baked in
+    // before our CutoutHook/AppBoundsHook fire. Replacing displayCutout
+    // with NO_CUTOUT here closes this cached-value leak path.
+
+    private fun hookDisplayInfoCutoutZero(param: SystemServerStartingParam) {
+        runCatching {
+            val logicalDisplayClass = param.classLoader.loadClass(
+                "com.android.server.display.LogicalDisplay")
+            val displayCutoutClass = param.classLoader.loadClass(
+                "android.view.DisplayCutout")
+            val noCutout = displayCutoutClass.field("NO_CUTOUT").get(null)
+                ?: return@runCatching
+
+            hook(logicalDisplayClass.method("getDisplayInfoLocked"),
+                after { _, result ->
+                    val info = result ?: return@after result
+                    info.setField("displayCutout", noCutout)
+                    result
+                })
+            log("DisplayState: ✓ DisplayInfo.displayCutout → NO_CUTOUT")
+        }.onFailure { log("DisplayState: displayCutout zero failed", it) }
     }
 
     // ── 5. AOD on outer screen: prevent sleep + block dream timeouts ───
