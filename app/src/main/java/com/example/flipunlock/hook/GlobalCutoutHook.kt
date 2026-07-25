@@ -20,6 +20,10 @@ object GlobalCutoutHook : BaseHook() {
     override fun hook(param: PackageReadyParam) {
         if (!Config.displayCutout) return
         val pkg = param.packageName
+        // Sogou IME needs real cutout info for keyboard sizing on outer screen.
+        // Skip ALL hooks — DeviceIdentityHook already excludes Sogou for the
+        // same reason. Keyboard width regression traced to b668164 (Build #220).
+        if (pkg == "com.sohu.inputmethod.sogou.xiaomi") return
         safeHook("GlobalCutout") {
             hookDisplayGetCutout(pkg)
             hookWindowInsetsGetCutout(pkg)
