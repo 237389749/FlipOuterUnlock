@@ -31,8 +31,11 @@ object GlobalCutoutHook : BaseHook() {
 
     /**
      * DisplayCutoutStubImpl.isFlipFolded() → false.
+     *
+     * Skip Sogou IME — keyboard needs real fold state for layout.
      */
     private fun hookFlipFoldedCutoutStub(param: PackageReadyParam) {
+        if (param.packageName == "com.sohu.inputmethod.sogou.xiaomi") return
         runCatching {
             val cls = param.classLoader.loadClass("android.view.DisplayCutoutStubImpl")
             val method = cls.getDeclaredMethod("isFlipFolded")
@@ -54,8 +57,12 @@ object GlobalCutoutHook : BaseHook() {
      *
      * By forcing false, we prevent the flip-specific view shifting that
      * causes popups/toasts to appear off-center (shifted left).
+     *
+     * Skip Sogou IME — keyboard needs real size-compat scaling to fill
+     * the outer screen width correctly.
      */
     private fun hookSizeCompatScaleMode(param: PackageReadyParam) {
+        if (param.packageName == "com.sohu.inputmethod.sogou.xiaomi") return
         runCatching {
             val cls = param.classLoader.loadClass("android.app.ActivityThreadImpl")
             val method = cls.getDeclaredMethod("inMiuiSizeCompatScaleMode")
