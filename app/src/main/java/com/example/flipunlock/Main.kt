@@ -7,10 +7,12 @@ import com.example.flipunlock.hook.util.Config
 import com.example.flipunlock.hook.SogouInputHook
 import com.example.flipunlock.hook.AodHook
 //import com.example.flipunlock.hook.CameraHook  // TODO: not working
+import com.example.flipunlock.hook.ControlCenterHook
 import com.example.flipunlock.hook.CutoutHook
 import com.example.flipunlock.hook.DeviceIdentityHook
 import com.example.flipunlock.hook.GlobalCutoutHook
 import com.example.flipunlock.hook.WatchOverlayHook
+import com.example.flipunlock.hook.RecentsMenuHook
 import com.example.flipunlock.hook.ScreenTypeHook
 import com.example.flipunlock.hook.SystemUIHook
 import com.example.flipunlock.hook.gesture.GestureHook
@@ -40,12 +42,14 @@ class Main : XposedModule() {
         GlobalCutoutHook,  // Display.getCutout + WindowInsets.getDisplayCutout → zero (all apps)
         AodHook,  // v2.3: screen state fix + FlipLinkageStyleController
 //        CameraHook,  // TODO: front camera redirect not working — HAL reports all cameras as LENS_FACING_BACK
+        ControlCenterHook,  // v2.7: restore normal control center style on outer screen
         CutoutHook,
         SystemUIHook,
         GestureHook,  // v2: block fliphome InputMonitor → system gestures
         LauncherHook,  // block SpecialFDeviceGestureHelper → keep NavStubView on outer screen
         LockScreenHook,  // fix lock screen: swipe, shortcuts, wallpaper on outer screen
 //        LauncherDensityHook,  // Not needed: state=6 already adapts launcher to outer screen
+        RecentsMenuHook,  // v2.7: recents task long-press menu (lock/unlock + app info)
         SogouInputHook,
         ActivityLifecycleHook,
         WatchOverlayHook,

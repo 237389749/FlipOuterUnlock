@@ -15,6 +15,8 @@ package com.example.flipunlock.hook.util
  *   setprop persist.flipunlock.gesture.back false        # back gestures
  *   setprop persist.flipunlock.ui.lockscreen false       # lock screen layout
  *   setprop persist.flipunlock.ui.widget false           # disable widget overlay
+ *   setprop persist.flipunlock.ui.controlcenter false    # control center restore
+ *   setprop persist.flipunlock.ui.recentsmenu false      # recents long-press menu
  *   setprop persist.flipunlock.ime false                 # input method freedom
  *
  * ═══ Dependency / Coupling Notes ═══
@@ -52,6 +54,14 @@ package com.example.flipunlock.hook.util
  *   WatchOverlayHook operates in fliphome process only.
  *   No dependency on any other toggle.
  *
+ * ui.controlcenter ── INDEPENDENT ──
+ *   Control center style restoration targets SystemUI plugin context.
+ *   No dependency on any other toggle.
+ *
+ * ui.recentsmenu ── INDEPENDENT ──
+ *   Recents long-press menu targets fliphome recents views.
+ *   No dependency on any other toggle.
+ *
  * ime ── INDEPENDENT ──
  *   Input method hooks in system_server + Sogou process.
  *   No dependency on any other toggle.
@@ -66,6 +76,8 @@ object Config {
         "persist.flipunlock.gesture.back",
         "persist.flipunlock.ui.lockscreen",
         "persist.flipunlock.ui.widget",
+        "persist.flipunlock.ui.controlcenter",
+        "persist.flipunlock.ui.recentsmenu",
         "persist.flipunlock.ime",
     )
 
@@ -84,6 +96,8 @@ object Config {
     // UI
     val uiLockScreen: Boolean get() = enabled && raw("persist.flipunlock.ui.lockscreen", true)
     val uiWidget: Boolean get() = enabled && raw("persist.flipunlock.ui.widget", true)
+    val uiControlCenter: Boolean get() = enabled && raw("persist.flipunlock.ui.controlcenter", true)
+    val uiRecentsMenu: Boolean get() = enabled && raw("persist.flipunlock.ui.recentsmenu", true)
 
     // Other
     val ime: Boolean get() = enabled && raw("persist.flipunlock.ime", true)
