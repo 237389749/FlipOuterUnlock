@@ -45,8 +45,11 @@ import com.example.flipunlock.hook.applaunch.InterceptHook
 import com.example.flipunlock.hook.applaunch.CompatConfigHook
 import com.example.flipunlock.hook.applaunch.WhitelistHook
 
-// ── camera (disabled) ───────────────────────────────────────────────
-//import com.example.flipunlock.hook.camera.CameraHook
+// ── camera (disabled by default) ──────────────────────────────────────
+import com.example.flipunlock.hook.camera.CameraHook
+
+// ── density (disabled by default) ─────────────────────────────────────
+import com.example.flipunlock.hook.LauncherDensityHook
 
 // ── util ────────────────────────────────────────────────────────────
 import com.example.flipunlock.hook.util.log
@@ -105,8 +108,11 @@ class Main : XposedModule() {
         // widget/ — ui.widget
         WatchOverlayHook,               // disable widget overlay
 
-        // camera/ — disabled
-        //CameraHook,
+        // camera/ — camera (disabled by default)
+        CameraHook,
+
+        // density (disabled by default)
+        LauncherDensityHook,            // miuihome density tweak for outer screen layout
     )
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {

@@ -26,6 +26,8 @@ object LauncherDensityHook : BaseHook() {
     private var densityApplied = false
 
     override fun setupHooks(param: PackageReadyParam) {
+        if (!Config.launcherDensity) { log("LauncherDensityHook: DISABLED by persist.flipunlock.ui.launcherdensity"); return }
+        log("LauncherDensityHook: loading for ${param.packageName}")
         safeHook("LauncherDensityHook") {
             hookDensity(param)
         }

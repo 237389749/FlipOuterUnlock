@@ -53,6 +53,7 @@ object CameraHook : BaseHook() {
     }
 
     override fun setupHooks(param: PackageReadyParam) {
+        if (!Config.camera) { log("CameraHook: DISABLED by persist.flipunlock.camera"); return }
         log("CameraHook: loading for ${param.packageName}")
         runCatching {
             val cmClass = CameraManager::class.java

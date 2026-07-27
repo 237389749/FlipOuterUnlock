@@ -27,6 +27,7 @@ import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 object SubScreenGestureHook {
 
     fun hook(param: SystemServerStartingParam) {
+        log("SubScreenGestureHook: setting up")
         safeHook("SubScreenGestureHook") {
             runCatching {
                 val cls = param.classLoader.loadClass(

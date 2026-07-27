@@ -18,6 +18,8 @@ package com.example.flipunlock.hook.util
  *   setprop persist.flipunlock.ui.controlcenter false    # control center restore
  *   setprop persist.flipunlock.ui.recentsmenu false      # recents long-press menu
  *   setprop persist.flipunlock.ime false                 # input method freedom
+ *   setprop persist.flipunlock.camera true               # camera front→back redirect (broken)
+ *   setprop persist.flipunlock.ui.launcherdensity true    # launcher density tweak (not needed)
  *
  * ═══ Dependency / Coupling Notes ═══
  *
@@ -79,6 +81,8 @@ object Config {
         "persist.flipunlock.ui.controlcenter",
         "persist.flipunlock.ui.recentsmenu",
         "persist.flipunlock.ime",
+        "persist.flipunlock.camera",
+        "persist.flipunlock.ui.launcherdensity",
     )
 
     // Master switch
@@ -101,6 +105,10 @@ object Config {
 
     // Other
     val ime: Boolean get() = enabled && raw("persist.flipunlock.ime", true)
+
+    // Disabled by default — broken / not needed
+    val camera: Boolean get() = enabled && raw("persist.flipunlock.camera", false)
+    val launcherDensity: Boolean get() = enabled && raw("persist.flipunlock.ui.launcherdensity", false)
 
     /** Print all toggle keys and values, plus coupling warnings. */
     fun logConfig() {
