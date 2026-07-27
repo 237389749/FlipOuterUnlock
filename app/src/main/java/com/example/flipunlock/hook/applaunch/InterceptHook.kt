@@ -1,4 +1,4 @@
-package com.example.flipunlock.hook.system
+package com.example.flipunlock.hook.applaunch
 
 import android.content.ComponentName
 import com.example.flipunlock.hook.util.*

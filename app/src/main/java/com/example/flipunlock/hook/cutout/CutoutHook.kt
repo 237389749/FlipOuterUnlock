@@ -1,4 +1,5 @@
-package com.example.flipunlock.hook
+package com.example.flipunlock.hook.cutout
+import com.example.flipunlock.hook.BaseHook
 
 import android.graphics.Insets
 import android.graphics.Path

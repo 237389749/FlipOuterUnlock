@@ -1,4 +1,5 @@
-package com.example.flipunlock.hook
+package com.example.flipunlock.hook.cutout
+import com.example.flipunlock.hook.BaseHook
 
 import android.view.Display
 import android.view.DisplayCutout
@@ -23,7 +24,7 @@ object GlobalCutoutHook : BaseHook() {
         // Sogou IME needs real cutout info for keyboard sizing on outer screen.
         // Skip ALL hooks — DeviceIdentityHook already excludes Sogou for the
         // same reason. Keyboard width regression traced to b668164 (Build #220).
-        if (pkg == "com.sohu.inputmethod.sogou.xiaomi") return
+        if (pkg in Exclusions.GLOBAL_CUTOUT) return
         safeHook("GlobalCutout") {
             hookDisplayGetCutout(pkg)
             hookWindowInsetsGetCutout(pkg)
@@ -39,7 +40,7 @@ object GlobalCutoutHook : BaseHook() {
      * Skip Sogou IME — keyboard needs real fold state for layout.
      */
     private fun hookFlipFoldedCutoutStub(param: PackageReadyParam) {
-        if (param.packageName == "com.sohu.inputmethod.sogou.xiaomi") return
+        if (param.packageName in Exclusions.GLOBAL_CUTOUT) return  // defense-in-depth: top-level also covers
         runCatching {
             val cls = param.classLoader.loadClass("android.view.DisplayCutoutStubImpl")
             val method = cls.getDeclaredMethod("isFlipFolded")
@@ -66,7 +67,7 @@ object GlobalCutoutHook : BaseHook() {
      * the outer screen width correctly.
      */
     private fun hookSizeCompatScaleMode(param: PackageReadyParam) {
-        if (param.packageName == "com.sohu.inputmethod.sogou.xiaomi") return
+        if (param.packageName in Exclusions.GLOBAL_CUTOUT) return  // defense-in-depth: top-level also covers
         runCatching {
             val cls = param.classLoader.loadClass("android.app.ActivityThreadImpl")
             val method = cls.getDeclaredMethod("inMiuiSizeCompatScaleMode")

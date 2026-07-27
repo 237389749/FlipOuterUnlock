@@ -1,4 +1,4 @@
-package com.example.flipunlock.hook.system
+package com.example.flipunlock.hook.applaunch
 
 import android.content.BroadcastReceiver
 import android.content.Context

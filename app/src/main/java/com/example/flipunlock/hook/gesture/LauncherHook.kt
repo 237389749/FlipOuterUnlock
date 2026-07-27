@@ -1,4 +1,5 @@
-package com.example.flipunlock.hook
+package com.example.flipunlock.hook.gesture
+import com.example.flipunlock.hook.BaseHook
 
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam

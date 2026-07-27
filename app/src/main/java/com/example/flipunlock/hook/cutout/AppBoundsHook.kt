@@ -1,4 +1,4 @@
-package com.example.flipunlock.hook.system
+package com.example.flipunlock.hook.cutout
 
 import android.graphics.Rect
 import com.example.flipunlock.hook.util.*

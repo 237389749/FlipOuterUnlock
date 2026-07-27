@@ -1,4 +1,5 @@
-package com.example.flipunlock.hook
+package com.example.flipunlock.hook.identity
+import com.example.flipunlock.hook.BaseHook
 
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
@@ -24,10 +25,7 @@ object DeviceIdentityHook : BaseHook() {
     override val targetPackages = listOf("*")
 
     override fun hook(param: PackageReadyParam) {
-        // These packages need original flip behavior:
-        // - SystemUI: TinyKeyguardPanelViewController (lock screen panel)
-        // - Sogou IME: isTinyScreen controls keyboard height on outer screen
-        if (param.packageName in setOf("com.android.systemui", "com.sohu.inputmethod.sogou.xiaomi")) return
+        if (param.packageName in Exclusions.DEVICE_IDENTITY) return
         log("DeviceIdentityHook: loading for ${param.packageName}")
         safeHook("DeviceIdentityHook") {
             hookRootDeviceType(param)       // MiuiMultiDisplayTypeInfo

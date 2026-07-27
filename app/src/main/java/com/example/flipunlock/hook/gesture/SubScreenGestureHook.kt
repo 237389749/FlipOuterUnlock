@@ -1,4 +1,4 @@
-package com.example.flipunlock.hook.system
+package com.example.flipunlock.hook.gesture
 
 import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
