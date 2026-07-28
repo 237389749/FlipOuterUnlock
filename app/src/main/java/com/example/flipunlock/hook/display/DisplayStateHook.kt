@@ -38,7 +38,7 @@ object DisplayStateHook {
         safeHook("DisplayStateHook") {
             hookDisplayToClosed(param)
             hookDisplayLayoutGet(param)
-            hookAppLayerToUnfolded(param)
+//            hookAppLayerToUnfolded(param)  // DISABLED: getHomeIntent crash; use CompatConfig+Intercept+Whitelist instead
             hookDisplayInfoForStateToClosed(param)
             hookDisplayEnabledLocked(param)
             hookExternalDisplayDisable(param)
