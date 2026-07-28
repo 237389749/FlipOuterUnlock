@@ -43,6 +43,7 @@ object DisplayStateHook {
             hookDisplayEnabledLocked(param)
             hookExternalDisplayDisable(param)
             hookDisplayInfoCutoutZero(param)
+            hookLayoutCutoutMode(param)
             hookComputeFrames(param)
             hookAodOuterScreen(param)
         }
@@ -270,7 +271,32 @@ object DisplayStateHook {
         }.onFailure { log("DisplayState: displayCutout zero failed", it) }
     }
 
-    // ── §7. computeFrames output fix — defense-in-depth ─────────────────
+    // ── §7. Force ALWAYS cutout mode in system_server ──────────────────
+    //
+    // WindowLayout.computeFrames() calls getLayoutInDisplayCutoutMode() to
+    // decide whether to clip frames by cutout-safe area. Toast windows have
+    // mode=0 (DEFAULT) → clipping applies → 62px left-shift.
+    //
+    // ActivityLifecycleHook only covers Activity windows. This hook covers
+    // ALL windows (Toast, dialog, etc.) by forcing ALWAYS(3) at the
+    // WindowLayoutStubImpl level in system_server where computeFrames() runs.
+    //
+    // Note: GlobalCutoutHook also hooks this method from app processes — but
+    // that relies on boot classloader sharing. This system_server version
+    // is the reliable one.
+    private fun hookLayoutCutoutMode(param: SystemServerStartingParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "android.view.WindowLayoutStubImpl")
+            val method = cls.getDeclaredMethod("getLayoutInDisplayCutoutMode",
+                android.view.WindowManager.LayoutParams::class.java)
+            method.isAccessible = true
+            hook(method, replaceResult(3))  // LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            log("DisplayState: ✓ getLayoutInDisplayCutoutMode → ALWAYS (system_server)")
+        }.onFailure { log("DisplayState: getLayoutInDisplayCutoutMode failed", it) }
+    }
+
+    // ── §7b. computeFrames output fix — defense-in-depth ─────────────────
     //
     // GlobalCutoutHook.hookLayoutCutoutMode forces getLayoutInDisplayCutoutMode()
     // → ALWAYS (3), which skips the cutout clipping in computeFrames(). But if
