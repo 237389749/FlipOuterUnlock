@@ -94,6 +94,26 @@ object SubScreenGestureHook {
                     chain.proceed()
                 }
 
+                // Fix: redirect PowerManager.goToSleep(displayId, ...) displayId 1→0.
+                // MiuiSubscreenDoubleTapGesture hardcodes goToSleep(1, ...). In state=6
+                // (DUAL), the outer screen is displayId=0, so the sleep targets the
+                // wrong display and nothing happens. Redirect to displayId=0.
+                val pmClass = param.classLoader.loadClass("android.os.PowerManager")
+                val sleepMethod = pmClass.getDeclaredMethod("goToSleep",
+                    Int::class.javaPrimitiveType!!,   // displayId
+                    Long::class.javaPrimitiveType!!,   // time
+                    Int::class.javaPrimitiveType!!,   // reason
+                    Int::class.javaPrimitiveType!!)   // flags
+                sleepMethod.isAccessible = true
+                hook(sleepMethod) { chain ->
+                    val displayId = chain.args[0] as? Int ?: return@hook chain.proceed()
+                    if (displayId == 1) {
+                        chain.args[0] = 0
+                        log("SubScreenGesture: redirect goToSleep displayId 1→0")
+                    }
+                    chain.proceed()
+                }
+
                 log("SubScreenGesture: hooked with displayId fix")
             }.onFailure { log("SubScreenGesture: failed", it) }
         }
