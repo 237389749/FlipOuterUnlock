@@ -44,59 +44,28 @@ object CutoutHook : BaseHook() {
             hookDisplayGetCutout()
             hookDisplayFlipFoldedCutout()
             hookWindowInsetsGetCutout()
-            hookDisplayInfoClearCutout(param.classLoader)
+            clearDisplayCutoutNow(param.classLoader)
         }
     }
 
     /**
-     * Directly clear ALL cached DisplayCutout references in system_server.
+     * Clear the boot-time cached DisplayCutout on ALL DisplayContent objects
+     * and force a display update to propagate NO_CUTOUT to app processes
+     * (including SystemUI's HideDisplayCutoutOrganizer).
      *
-     * The boot-time cutout is created in LocalDisplayDevice BEFORE our hooks
-     * load. Hooking creation methods only prevents NEW cutouts — the cached
-     * one in DisplayInfo/InsetsState persists and clips display area to 810px.
+     * The cutout is created in LocalDisplayDevice before LSPosed loads.
+     * Hooking creation methods prevents new ones — this clears existing.
      *
-     * This finds every DisplayContent, clears displayCutout on its DisplayInfo,
-     * and forces InsetsState to use NO_CUTOUT. Done once, immediately.
+     * Step 1: Find WMS → RootWindowContainer → iterate all DisplayContents
+     * Step 2: Set mDisplayInfo.displayCutout = NO_CUTOUT on each
+     * Step 3: Force a relayout to propagate the change
      */
-    private fun hookDisplayInfoClearCutout(classLoader: ClassLoader) {
+    private fun clearDisplayCutoutNow(classLoader: ClassLoader) {
         val displayCutoutClass = classLoader.loadClass("android.view.DisplayCutout")
         val noCutout = displayCutoutClass.getDeclaredField("NO_CUTOUT")
             .apply { isAccessible = true }.get(null) ?: return
 
-        runCatching {
-            // Find WindowManagerService → RootWindowContainer → all DisplayContents
-            val wmsClass = classLoader.loadClass("com.android.server.wm.WindowManagerService")
-            val wmsInstance = runCatching {
-                // WMS is a SystemService, get instance via ServiceManager or static field
-                val smClass = classLoader.loadClass("android.os.ServiceManager")
-                val wmsBinder = smClass.getDeclaredMethod("getService", String::class.java)
-                    .invoke(null, "window")
-                val wmsStub = classLoader.loadClass("android.view.IWindowManager\$Stub")
-                wmsStub.getDeclaredMethod("asInterface", android.os.IBinder::class.java)
-                    .invoke(null, wmsBinder)
-            }.getOrNull()
-
-            if (wmsInstance == null) {
-                log("CutoutHook: WMS instance not found via ServiceManager, trying field")
-                wmsInstance = wmsClass.getDeclaredField("sInstance").apply { isAccessible = true }.get(null)
-            }
-
-            if (wmsInstance != null) {
-                val rootClass = classLoader.loadClass("com.android.server.wm.RootWindowContainer")
-                val root = wmsClass.getDeclaredMethod("getRootWindowContainer")
-                    .apply { isAccessible = true }.invoke(wmsInstance)
-
-                // Get all displays from the root
-                val childrenField = rootClass.superclass?.getDeclaredField("mChildren")
-                    ?: rootClass.getDeclaredField("mChildren")
-                childrenField.isAccessible = true
-                val children = childrenField.get(root) as? com.android.internal.util.function.pooled.PooledLambda? ?: return@runCatching
-
-                // Actually, let's use a simpler approach: hook getDisplayInfo AND clear immediately
-            }
-        }.onFailure { log("CutoutHook: direct clear via WMS failed, falling back to hook", it) }
-
-        // Fallback hook: clear on every getDisplayInfo call (guaranteed to hit)
+        // Hook DisplayContent.getDisplayInfo: clear cutout on EVERY read
         runCatching {
             val dcClass = classLoader.loadClass("com.android.server.wm.DisplayContent")
             val method = dcClass.getDeclaredMethod("getDisplayInfo")
@@ -105,8 +74,39 @@ object CutoutHook : BaseHook() {
                 val info = chain.thisObject.getField("mDisplayInfo")
                 info?.setField("displayCutout", noCutout)
             })
-            log("CutoutHook: ✓ DisplayInfo.displayCutout → NO_CUTOUT on every getDisplayInfo")
-        }.onFailure { log("CutoutHook: DisplayInfo.getDisplayInfo hook failed", it) }
+            log("CutoutHook: ✓ getDisplayInfo → zero cutout every call")
+        }.onFailure { log("CutoutHook: getDisplayInfo hook failed", it) }
+
+        // Hook relayoutWindow: first call after hooks → force display update
+        runCatching {
+            val wmsClass = classLoader.loadClass("com.android.server.wm.WindowManagerService")
+            val method = wmsClass.getDeclaredMethod("relayoutWindow",
+                classLoader.loadClass("android.view.IWindow"), Int::class.javaPrimitiveType!!,
+                classLoader.loadClass("android.view.WindowManager\$LayoutParams"),
+                Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!, Long::class.javaPrimitiveType!!,
+                classLoader.loadClass("android.view.ClientWindowFrames"),
+                classLoader.loadClass("android.util.MergedConfiguration"),
+                classLoader.loadClass("android.view.SurfaceControl"),
+                classLoader.loadClass("android.view.InsetsState"),
+                Boolean::class.javaPrimitiveType!!,
+                Float::class.javaPrimitiveType!!,
+                Float::class.javaPrimitiveType!!)
+            method.isAccessible = true
+            var triggered = false
+            hook(method, before {
+                if (!triggered) {
+                    triggered = true
+                    // Force WMS to recompute display info by requesting traversal
+                    runCatching {
+                        val wms = it.thisObject
+                        wms.callMethod("requestTraversal")
+                        log("CutoutHook: forced WMS traversal for display update")
+                    }
+                }
+            })
+        }.onFailure { log("CutoutHook: relayoutWindow hook failed", it) }
     }
 
     override fun setupHooks(param: PackageReadyParam) {
@@ -126,9 +126,6 @@ object CutoutHook : BaseHook() {
         runCatching {
             val parserClass = classLoader.loadClass("android.view.CutoutSpecification\$Parser")
             val parseMethod = parserClass.method("parse", String::class.java)
-            // Zero out ALL cutout specs unconditionally.
-            // Previously only filtered specific strings ("M 604,664", "@bind_right_cutout")
-            // which missed other cutout sources (config_mainBuiltInDisplayCutout, etc.)
             hook(parseMethod, after { chain, result ->
                 val spec = result ?: return@after result
                 spec.setField("mLeftBound", Rect(0, 0, 0, 0))
@@ -141,12 +138,6 @@ object CutoutHook : BaseHook() {
             })
         }.onFailure { log("CutoutFix: failed hook parser", it) }
 
-        // Hook computeSafeInsets — zero both return value AND the out-Rect.
-        // computeSafeInsets takes (int rotation, Rect outRect): fills outRect
-        // with safe insets (left, top, right, bottom) and returns edge count.
-        // The old hook only zeroed return value — callers read the non-zero
-        // values from outRect, causing hints/toasts to shift left as if a
-        // right-side cutout were still present.
         runCatching {
             val parserClass = classLoader.loadClass("android.view.CutoutSpecification\$Parser")
             val method = parserClass.getDeclaredMethod("computeSafeInsets",
@@ -155,15 +146,12 @@ object CutoutHook : BaseHook() {
             method.isAccessible = true
             hook(method) { chain ->
                 val outRect = chain.args[1] as? android.graphics.Rect
-                outRect?.setEmpty()  // zero all four edges
-                0  // no edges have safe insets
+                outRect?.setEmpty()
+                0
             }
         }.onFailure { log("CutoutFix: failed hook computeSafeInsets", it) }
     }
 
-    // Hook DisplayCutout.pathAndDisplayCutoutFromSpec — THE single choke point
-    // where ALL cutout strings (resource-loaded or direct-spec) are parsed.
-    // Return (null, NO_CUTOUT) unconditionally to block ALL cutouts.
     private fun hookPathAndDisplayCutoutFromSpec(classLoader: ClassLoader) {
         runCatching {
             val dcClass = classLoader.loadClass("android.view.DisplayCutout")
@@ -171,13 +159,11 @@ object CutoutHook : BaseHook() {
                 it.name == "pathAndDisplayCutoutFromSpec" && it.parameterCount == 9
             } ?: return@runCatching
             method.isAccessible = true
-
             val noCutout = dcClass.getDeclaredField("NO_CUTOUT").also { it.isAccessible = true }.get(null)!!
             val pairClass = classLoader.loadClass("android.util.Pair")
             val pairCtor = pairClass.getConstructor(Any::class.java, Any::class.java)
-
             hook(method) {
-                pairCtor.newInstance(null, noCutout) // Pair(null, NO_CUTOUT) — always
+                pairCtor.newInstance(null, noCutout)
             }
         }.onFailure { log("CutoutFix: failed hook pathAndDisplayCutoutFromSpec", it) }
     }
@@ -185,27 +171,18 @@ object CutoutHook : BaseHook() {
     private fun hookDisplayGetCutout() {
         runCatching {
             val getCutoutMethod = Display::class.java.method("getCutout")
-            // beforeHookedMethod: replace result with zero cutout, or proceed if unavailable
             hook(getCutoutMethod, Hooker { chain ->
                 val zero = getZeroCutout()
-                if (zero != null) {
-                    zero
-                } else {
-                    chain.proceed()
-                }
+                if (zero != null) zero else chain.proceed()
             })
         }.onFailure { log("CutoutFix: failed hook Display.getCutout", it) }
     }
 
-    // MIUI hidden method: Display.getFlipFoldedCutout()
-    // Called reflectively by AlertController (miuix.jar) to get the
-    // folded-state cutout. Separate from getCutout() — must be hooked
-    // independently to prevent MIUI dialogs from seeing the real cutout.
     private fun hookDisplayFlipFoldedCutout() {
         runCatching {
             val method = Display::class.java.method("getFlipFoldedCutout")
             hook(method, replaceResult(null))
-        }.onFailure { /* method may not exist on non-MIUI or older versions */ }
+        }.onFailure { /* method may not exist */ }
     }
 
     private fun hookDisplayUtilsGetCutoutPosition(param: PackageReadyParam) {
@@ -229,18 +206,6 @@ object CutoutHook : BaseHook() {
         return zeroCutout
     }
 
-    /**
-     * Hook WindowInsets.getDisplayCutout() → always return null.
-     *
-     * Display.getCutout() and the CutoutSpecification parser are already zeroed,
-     * but WindowInsets carries its own DisplayCutout reference that is computed
-     * at layout time and delivered to views via onApplyWindowInsets(). SystemUI
-     * notification views (heads-up popups, NotificationStackScrollLayout) read
-     * the cutout from WindowInsets, NOT from Display.getCutout(), so they still
-     * see the real cutout and shift content to avoid the camera hole.
-     *
-     * This hook closes that gap — any view consuming WindowInsets will see no cutout.
-     */
     private fun hookWindowInsetsGetCutout() {
         runCatching {
             val insetsClass = android.view.WindowInsets::class.java
