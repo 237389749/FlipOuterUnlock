@@ -10,12 +10,48 @@ object AppBoundsHook {
         if (!Config.displayCutout) { log("AppBoundsHook: DISABLED by persist.flipunlock.display.cutout"); return }
         log("AppBoundsHook: setting up")
         safeHook("AppBounds") {
+            hookDisplayCutoutSafe(param)
             hookFillInsetsState(param)
             hookLaunchActivityItem(param)
             hookScheduleConfigurationChanged(param)
             hookScheduleClientTransactionItem(param)
         }
         log("AppBoundsHook: done")
+    }
+
+    /**
+     * InsetsState.getDisplayCutoutSafe(Rect) → restore full bounds.
+     *
+     * This is THE hook that controls toast/hint centering. WindowLayout.computeFrames()
+     * calls getDisplayCutoutSafe() to get the cutout-safe display rect, then clips
+     * the parent frame to that rect via intersectOrClamp(). The clipped frame feeds
+     * into Gravity.apply(CENTER_HORIZONTAL) for toast positioning:
+     *
+     *   parentWidth = displayWidth - safeInsetRight = 1208 - 124 = 1084
+     *   toast X = (1084 - toastWidth) / 2               ← 62px LEFT of center
+     *
+     * Hooking Display.getCutout() → NO_CUTOUT doesn't fix this because InsetsState
+     * reads from an internal mDisplayCutout supplier that was set at boot time
+     * (DisplayFrames construction, before LSPosed hooks load). That cached cutout
+     * has safeInsetRight=124 baked in.
+     *
+     * By restoring outBounds to full screen after getDisplayCutoutSafe() runs,
+     * computeFrames() sees an unclipped parent frame → toast centers correctly.
+     */
+    private fun hookDisplayCutoutSafe(param: SystemServerStartingParam) {
+        runCatching {
+            val insetsStateClass = param.classLoader.loadClass("android.view.InsetsState")
+            val method = insetsStateClass.getDeclaredMethod("getDisplayCutoutSafe",
+                android.graphics.Rect::class.java)
+            method.isAccessible = true
+            hook(method) { chain ->
+                chain.proceed()  // original method narrows outBounds by safeInsetRight=124
+                val outBounds = chain.args[0] as? android.graphics.Rect
+                // Restore full-screen bounds — default values from InsetsState source.
+                outBounds?.set(-100000, -100000, 100000, 100000)
+            }
+            log("AppBounds: ✓ getDisplayCutoutSafe → full bounds restored")
+        }.onFailure { log("AppBounds: getDisplayCutoutSafe failed", it) }
     }
 
     /**
