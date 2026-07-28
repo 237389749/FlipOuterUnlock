@@ -44,7 +44,36 @@ object CutoutHook : BaseHook() {
             hookDisplayGetCutout()
             hookDisplayFlipFoldedCutout()
             hookWindowInsetsGetCutout()
+            hookDisplayInfoClearCutout(param.classLoader)
         }
+    }
+
+    /**
+     * DisplayContent.getDisplayInfo() → set displayCutout = NO_CUTOUT.
+     *
+     * The boot-time cutout (safeInsetRight=124, 398px camera island) is
+     * cached in DisplayInfo.displayCutout before LSPosed loads. Hooking
+     * Parser.parse / Display.getCutout only prevents NEW cutouts — the
+     * cached one persists and clips the display area to 810px.
+     *
+     * getDisplayInfo() is called for EVERY window layout — clearing the
+     * cutout here ensures all consumers see NO_CUTOUT. The field is set
+     * BEFORE the original returns, so callers get the cleared value.
+     */
+    private fun hookDisplayInfoClearCutout(classLoader: ClassLoader) {
+        runCatching {
+            val dcClass = classLoader.loadClass("com.android.server.wm.DisplayContent")
+            val displayCutoutClass = classLoader.loadClass("android.view.DisplayCutout")
+            val noCutout = displayCutoutClass.getDeclaredField("NO_CUTOUT")
+                .apply { isAccessible = true }.get(null) ?: return@runCatching
+            val method = dcClass.getDeclaredMethod("getDisplayInfo")
+            method.isAccessible = true
+            hook(method, before { chain ->
+                val info = chain.thisObject.getField("mDisplayInfo")
+                info?.setField("displayCutout", noCutout)
+            })
+            log("CutoutHook: ✓ DisplayInfo.displayCutout → NO_CUTOUT (clears boot cache)")
+        }.onFailure { log("CutoutHook: DisplayInfo.clearCutout failed", it) }
     }
 
     override fun setupHooks(param: PackageReadyParam) {

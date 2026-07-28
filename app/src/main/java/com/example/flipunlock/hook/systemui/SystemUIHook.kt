@@ -37,31 +37,36 @@ object SystemUIHook : BaseHook() {
 
     // ── HideDisplayCutoutOrganizer: block Shell-level cutout crop ──────
     //
-    // This DisplayAreaOrganizer reads Display.getCutout().getSafeInsets()
-    // and applies setWindowCrop() on the entire display area Surface at
-    // the compositor (SurfaceFlinger) level. This is a SEPARATE layer
-    // from system_server's WindowLayout — even if window frames are
-    // correct in WMS, the Shell crops them at the Surface level after.
+    // This DisplayAreaOrganizer applies a SurfaceFlinger-level setWindowCrop()
+    // on the entire display area, cropping content by cutout safe insets.
+    // On Mix Flip outer screen: safeInsetRight=398px → display cropped to
+    // 810px → toast centers at 405px instead of 604px.
     //
-    // On the Mix Flip outer screen, this crop reduces the display area
-    // by safeInsetRight=124px → content (including toast) appears shifted.
-    //
-    // Hook getDisplayCutoutInsetsOfNaturalOrientation() → Insets.NONE
-    // to prevent the Shell-level crop entirely.
+    // Hook updateBoundsAndOffsets(): force mDefaultCutoutInsets=NONE
+    // and clear mDefaultDisplayBounds to defeat the early-return check
+    // (line 151: isEmpty || dimsChanged). This forces re-read of cutout
+    // on every call — and GlobalCutoutHook makes Display.getCutout()→NO_CUTOUT.
     private fun hookHideDisplayCutoutOrganizer(param: PackageReadyParam) {
         runCatching {
             val cls = param.classLoader.loadClass(
                 "com.android.wm.shell.hidedisplaycutout.HideDisplayCutoutOrganizer")
-            val method = cls.getDeclaredMethod("getDisplayCutoutInsetsOfNaturalOrientation")
+            val method = cls.getDeclaredMethod("updateBoundsAndOffsets",
+                Boolean::class.javaPrimitiveType!!)
             method.isAccessible = true
-            hook(method) { chain ->
-                val result = chain.proceed()
-                if (result != android.graphics.Insets.NONE) {
-                    log("HideDisplayCutout: original insets=$result → NONE")
+            hook(method, before { chain ->
+                val obj = chain.thisObject
+                // Force re-read cutout by clearing cached bounds
+                runCatching {
+                    val db = obj.getField("mDefaultDisplayBounds") as? android.graphics.Rect
+                    db?.setEmpty()
                 }
-                android.graphics.Insets.NONE
-            }
-            log("SystemUI: ✓ HideDisplayCutoutOrganizer → Insets.NONE")
+                // Zero cutout insets
+                runCatching {
+                    obj.setField("mDefaultCutoutInsets", android.graphics.Insets.NONE)
+                    obj.setField("mCurrentCutoutInsets", android.graphics.Insets.NONE)
+                }
+            })
+            log("SystemUI: ✓ HideDisplayCutoutOrganizer.updateBoundsAndOffsets → zero insets")
         }.onFailure { log("SystemUI: HideDisplayCutoutOrganizer failed", it) }
     }
 
