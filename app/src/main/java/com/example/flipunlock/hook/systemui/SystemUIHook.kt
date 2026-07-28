@@ -34,6 +34,51 @@ object SystemUIHook : BaseHook() {
         hookStatusBarClock(param)
         hookStatusBarIcons(param)
         hookNavigationBar(param)
+        hookToastGravity(param)
+    }
+
+    /**
+     * SystemUIToast.getGravity() → return CENTER_HORIZONTAL | BOTTOM (0x51).
+     *
+     * MIUI renders toasts through SystemUI (ToastUI → SystemUIToast), NOT
+     * the standard app-process Toast.TN. SystemUIToast has a BUG: it reads
+     * config_whenToStartHubModeDefault (value=0 = NO_GRAVITY) instead of
+     * config_toastDefaultGravity (value=0x51 = CENTER_HORIZONTAL | BOTTOM).
+     *
+     * With gravity=0, the toast is placed at x=0 → ~62px left of center on
+     * the Mix Flip outer screen. Forcing 0x51 centers it correctly.
+     *
+     * Same bug exists in ClickableToast (statusbar/views/ClickableToast).
+     */
+    private fun hookToastGravity(param: PackageReadyParam) {
+        // Fix 1: SystemUIToast.getGravity() → 0x51
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "com.android.systemui.toast.SystemUIToast")
+            val method = cls.getDeclaredMethod("getGravity")
+            method.isAccessible = true
+            hook(method, replaceResult(0x51))  // CENTER_HORIZONTAL | BOTTOM
+            log("SystemUI: ✓ SystemUIToast.getGravity → 0x51")
+        }.onFailure { log("SystemUI: SystemUIToast.getGravity failed", it) }
+
+        // Fix 2: ClickableToast — same bug, uses wrong resource
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "com.android.systemui.statusbar.views.ClickableToast")
+            val ctor = cls.declaredConstructors.firstOrNull {
+                it.parameterCount >= 3
+            }
+            if (ctor != null) {
+                ctor.isAccessible = true
+                hook(ctor, after { chain, _ ->
+                    runCatching {
+                        chain.thisObject?.setField("mGravity", 0x51)
+                    }
+                    null
+                })
+                log("SystemUI: ✓ ClickableToast gravity → 0x51")
+            }
+        }.onFailure { log("SystemUI: ClickableToast failed", it) }
     }
 
     // ── DecorWindowManagerImpl.shouldHideDecorWindow ────────────────────
