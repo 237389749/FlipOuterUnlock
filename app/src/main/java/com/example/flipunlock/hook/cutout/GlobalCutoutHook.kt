@@ -7,13 +7,20 @@ import com.example.flipunlock.hook.util.*
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
- * Global cutout zeroing — runs in ALL processes.
+ * Global cutout zeroing — runs in ALL app processes (wildcard "*").
  *
- * Unlike CutoutHook (which targets only SystemUI/AOD/Camera), this ensures
- * EVERY app on the outer screen sees no display cutout. This fixes app-level
- * toast/snackbar/dialog positioning that was still shifted by cutout insets
- * delivered through WindowInsets even though Display.getCutout() was zeroed
- * in specific processes only.
+ * Division of labor with CutoutHook:
+ *   GlobalCutoutHook: Display.getCutout() + WindowInsets.getDisplayCutout() +
+ *                     DisplayCutoutStubImpl.isFlipFolded() +
+ *                     inMiuiSizeCompatScaleMode() + getSizeCompatBounds()
+ *                     — covers ALL app processes (excluding Sogou IME).
+ *   CutoutHook:       CutoutSpecification.Parser + pathAndDisplayCutoutFromSpec +
+ *                     Display.getFlipFoldedCutout() + DisplayUtils.getCutoutPosition()
+ *                     — targeted at SystemUI/AOD/Camera (methods not covered here).
+ *   CutoutHook (system_server): Display.getCutout() + WindowInsets.getDisplayCutout()
+ *                     — system_server not covered by GlobalCutoutHook (app-only).
+ *
+ * No method is hooked by both files in the same process.
  */
 object GlobalCutoutHook : BaseHook() {
     override val targetPackages = listOf("*")

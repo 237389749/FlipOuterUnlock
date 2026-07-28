@@ -12,6 +12,20 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 import java.util.Collections
 
+/**
+ * Cutout blocking at framework choke points — system_server + targeted apps.
+ *
+ * Division of labor with GlobalCutoutHook:
+ *   CutoutHook:   CutoutSpecification.Parser, pathAndDisplayCutoutFromSpec,
+ *                 getFlipFoldedCutout, getCutoutPosition (AOD). These are
+ *                 NOT covered by GlobalCutoutHook.
+ *   CutoutHook (system_server): additionally hooks Display.getCutout() +
+ *                 WindowInsets.getDisplayCutout() — system_server is not
+ *                 covered by GlobalCutoutHook (app-only).
+ *   GlobalCutoutHook (app processes): Display.getCutout() +
+ *                 WindowInsets.getDisplayCutout() + isFlipFolded +
+ *                 sizeCompatScale — covers ALL app processes.
+ */
 object CutoutHook : BaseHook() {
     override val targetPackages = listOf(
         "com.android.systemui",
@@ -36,12 +50,14 @@ object CutoutHook : BaseHook() {
     override fun setupHooks(param: PackageReadyParam) {
         if (!Config.displayCutout) return
         log("CutoutHook: loading for ${param.packageName}")
+        // App-process hooks that GlobalCutoutHook does NOT cover.
+        // Display.getCutout() and WindowInsets.getDisplayCutout() are
+        // handled by GlobalCutoutHook in ALL app processes — duplicating
+        // them here would violate "one method, one process, one hook".
         hookCutoutParser(param.classLoader)
         hookPathAndDisplayCutoutFromSpec(param.classLoader)
-        hookDisplayGetCutout()
         hookDisplayFlipFoldedCutout()
         hookDisplayUtilsGetCutoutPosition(param)
-        hookWindowInsetsGetCutout()
     }
 
     private fun hookCutoutParser(classLoader: ClassLoader) {
