@@ -66,14 +66,7 @@ object GlobalCutoutHook : BaseHook() {
             val method = cls.getDeclaredMethod("getLayoutInDisplayCutoutMode",
                 android.view.WindowManager.LayoutParams::class.java)
             method.isAccessible = true
-            hook(method) { chain ->
-                val attrs = chain.args[0]
-                val type = runCatching { attrs?.getField("type") as? Int }.getOrNull()
-                val title = runCatching { attrs?.callMethod("getTitle") as? String }.getOrNull()
-                val orig = chain.proceed()
-                log("DIAG_TOAST: GlobalCutout getLayoutInDisplayCutoutMode type=$type title=$title orig=$orig → 3")
-                3  // LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-            }
+            hook(method, replaceResult(3))  // LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             log("GlobalCutout: getLayoutInDisplayCutoutMode → ALWAYS for ${param.packageName}")
         }.onFailure { log("GlobalCutout: getLayoutInDisplayCutoutMode failed", it) }
     }

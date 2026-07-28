@@ -12,10 +12,11 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  * SystemUI-side hooks for the external display.
  *
  * Currently hooks:
- * - DecorWindowManagerImpl.shouldHideDecorWindow() to hide widget overlay
- * - MiuiNotificationMenuRow.createMenuViews() with isTinyScreen -> false scope
- * - MiuiCollapsedStatusBarFragment clock visibility (hide on flip outer screen)
- * - NotificationIconContainer / MiuiStatusIconContainer icon expansion
+ * - HideDisplayCutoutOrganizer.getDisplayCutoutInsetsOfNaturalOrientation → NONE
+ * - DecorWindowManagerImpl.shouldHideDecorWindow → true
+ * - MiuiCollapsedStatusBarFragment clock visibility (hide on outer screen)
+ * - NotificationIconContainer icon expansion
+ * - SystemUIToast.getGravity → 0x51 (toast centering fix)
  *
  * DeviceIdentityHook is excluded from SystemUI process (lock screen crash),
  * so this hook applies fixes unconditionally without device state checks.
@@ -23,67 +24,48 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 object SystemUIHook : BaseHook() {
     override val targetPackages = listOf("com.android.systemui")
 
-    // Default max icons for status bar. 8 ensures the always-on display
-    // shows enough notification icons.
     private const val STATUS_BAR_ICON_MAX = 8
 
     override fun setupHooks(param: PackageReadyParam) {
         log("SystemUIHook: loading for ${param.packageName}")
+        hookHideDisplayCutoutOrganizer(param)
         hookDecorWindowManager(param)
-        hookNotificationMenu(param)
         hookStatusBarClock(param)
         hookStatusBarIcons(param)
-        hookNavigationBar(param)
         hookToastGravity(param)
     }
 
-    /**
-     * SystemUIToast.getGravity() → return CENTER_HORIZONTAL | BOTTOM (0x51).
-     *
-     * MIUI renders toasts through SystemUI (ToastUI → SystemUIToast), NOT
-     * the standard app-process Toast.TN. SystemUIToast has a BUG: it reads
-     * config_whenToStartHubModeDefault (value=0 = NO_GRAVITY) instead of
-     * config_toastDefaultGravity (value=0x51 = CENTER_HORIZONTAL | BOTTOM).
-     *
-     * With gravity=0, the toast is placed at x=0 → ~62px left of center on
-     * the Mix Flip outer screen. Forcing 0x51 centers it correctly.
-     *
-     * Same bug exists in ClickableToast (statusbar/views/ClickableToast).
-     */
-    private fun hookToastGravity(param: PackageReadyParam) {
-        // Fix 1: SystemUIToast.getGravity() → 0x51
+    // ── HideDisplayCutoutOrganizer: block Shell-level cutout crop ──────
+    //
+    // This DisplayAreaOrganizer reads Display.getCutout().getSafeInsets()
+    // and applies setWindowCrop() on the entire display area Surface at
+    // the compositor (SurfaceFlinger) level. This is a SEPARATE layer
+    // from system_server's WindowLayout — even if window frames are
+    // correct in WMS, the Shell crops them at the Surface level after.
+    //
+    // On the Mix Flip outer screen, this crop reduces the display area
+    // by safeInsetRight=124px → content (including toast) appears shifted.
+    //
+    // Hook getDisplayCutoutInsetsOfNaturalOrientation() → Insets.NONE
+    // to prevent the Shell-level crop entirely.
+    private fun hookHideDisplayCutoutOrganizer(param: PackageReadyParam) {
         runCatching {
             val cls = param.classLoader.loadClass(
-                "com.android.systemui.toast.SystemUIToast")
-            val method = cls.getDeclaredMethod("getGravity")
+                "com.android.wm.shell.hidedisplaycutout.HideDisplayCutoutOrganizer")
+            val method = cls.getDeclaredMethod("getDisplayCutoutInsetsOfNaturalOrientation")
             method.isAccessible = true
-            hook(method, replaceResult(0x51))  // CENTER_HORIZONTAL | BOTTOM
-            log("SystemUI: ✓ SystemUIToast.getGravity → 0x51")
-        }.onFailure { log("SystemUI: SystemUIToast.getGravity failed", it) }
-
-        // Fix 2: ClickableToast — same bug, uses wrong resource
-        runCatching {
-            val cls = param.classLoader.loadClass(
-                "com.android.systemui.statusbar.views.ClickableToast")
-            val ctor = cls.declaredConstructors.firstOrNull {
-                it.parameterCount >= 3
+            hook(method) { chain ->
+                val result = chain.proceed()
+                if (result != android.graphics.Insets.NONE) {
+                    log("HideDisplayCutout: original insets=$result → NONE")
+                }
+                android.graphics.Insets.NONE
             }
-            if (ctor != null) {
-                ctor.isAccessible = true
-                hook(ctor, after { chain, _ ->
-                    runCatching {
-                        chain.thisObject?.setField("mGravity", 0x51)
-                    }
-                    null
-                })
-                log("SystemUI: ✓ ClickableToast gravity → 0x51")
-            }
-        }.onFailure { log("SystemUI: ClickableToast failed", it) }
+            log("SystemUI: ✓ HideDisplayCutoutOrganizer → Insets.NONE")
+        }.onFailure { log("SystemUI: HideDisplayCutoutOrganizer failed", it) }
     }
 
     // ── DecorWindowManagerImpl.shouldHideDecorWindow ────────────────────
-    // Returns true = hide widget, false = show widget.
-    // We force true to always hide from SystemUI side.
     private fun hookDecorWindowManager(param: PackageReadyParam) {
         runCatching {
             val cls = param.classLoader.loadClass(
@@ -97,42 +79,15 @@ object SystemUIHook : BaseHook() {
         }.onFailure { log("SystemUI: failed hook DecorWindowManagerImpl", it) }
     }
 
-    // ── Notification menu fix ───────────────────────────────────────────
-    // MiuiNotificationMenuRow.createMenuViews runs within a scope where
-    // MiuiConfigs.isTinyScreen(Context) returns false.
-    // Belt-and-suspenders with DeviceIdentityHook's global override.
-    private fun hookNotificationMenu(param: PackageReadyParam) {
-        runCatching {
-            val miuiConfigs = param.classLoader.loadClass(
-                "com.miui.utils.configs.MiuiConfigs"
-            )
-            val fakeTinyScreen = hookScope(
-                miuiConfigs.method("isTinyScreen", Context::class.java)
-            ) { false }
-
-            val rowClass = param.classLoader.loadClass(
-                "com.android.systemui.statusbar.notification.row.MiuiNotificationMenuRow"
-            )
-            hook(rowClass.method("createMenuViews", Boolean::class.java)) { chain ->
-                fakeTinyScreen.run { chain.proceed() }
-            }
-            log("SystemUI: hooked MiuiNotificationMenuRow.createMenuViews")
-        }.onFailure { log("SystemUI: failed hook notification menu", it) }
-    }
-
     // ── Status bar clock hiding ──────────────────────────────────────────
-    // Always hide the status bar clock on the external display since
-    // the always-on/outer screen has its own clock layout.
     private fun hookStatusBarClock(param: PackageReadyParam) {
         runCatching {
             val fragmentClass = param.classLoader.loadClass(
                 "com.android.systemui.statusbar.phone.MiuiCollapsedStatusBarFragment"
             )
 
-            // clockHiddenMode -> return 8 (GONE) to hide clock
             hook(fragmentClass.method("clockHiddenMode")) { 8 }
 
-            // updateStatusBarVisibilities -> after proceed, force hideClock
             hook(fragmentClass.method(
                 "updateStatusBarVisibilities", Boolean::class.java
             )) { chain ->
@@ -141,7 +96,6 @@ object SystemUIHook : BaseHook() {
                 result
             }
 
-            // showClock -> if arg is true, hide clock instead of showing it
             hook(fragmentClass.method("showClock", Boolean::class.java)) { chain ->
                 if (chain.args[0] == true) {
                     chain.thisObject?.callMethod("hideClock", false)
@@ -155,18 +109,8 @@ object SystemUIHook : BaseHook() {
     }
 
     // ── Status bar icon expansion ────────────────────────────────────────
-    // Expand max notification icons shown on the external display and
-    // fake isFlipTinyScreen -> false during measure/layout.
     private fun hookStatusBarIcons(param: PackageReadyParam) {
         runCatching {
-            val miuiConfigs = param.classLoader.loadClass(
-                "com.miui.utils.configs.MiuiConfigs"
-            )
-            val fakeFlipTinyScreen = hookScope(
-                miuiConfigs.method("isFlipTinyScreen", Context::class.java)
-            ) { false }
-
-            // ── NotificationIconContainer ────────────────────────────────
             val containerClass = param.classLoader.loadClass(
                 "com.android.systemui.statusbar.phone.NotificationIconContainer"
             )
@@ -177,7 +121,7 @@ object SystemUIHook : BaseHook() {
                 runWithCleanup({
                     savedMaxIcons?.let { chain.thisObject?.setField("mMaxIcons", it) }
                 }) {
-                    fakeFlipTinyScreen.run { chain.proceed() }
+                    chain.proceed()
                 }
             }
 
@@ -192,93 +136,41 @@ object SystemUIHook : BaseHook() {
                 iconHooker
             )
 
-            // ── MiuiStatusIconContainer ──────────────────────────────────
-            val statusIconClass = param.classLoader.loadClass(
-                "com.android.systemui.statusbar.views.MiuiStatusIconContainer"
-            )
-            hook(
-                statusIconClass.method("onMeasure", Int::class.java, Int::class.java)
-            ) { chain ->
-                fakeFlipTinyScreen.run { chain.proceed() }
-            }
-
             log("SystemUI: hooked status bar icon expansion")
         }.onFailure { log("SystemUI: failed hook status bar icons", it) }
     }
 
-    // ── NavigationBar fix: force creation on flip outer screen ─────────
-    //
-    // NavigationBarControllerImpl creates the gesture navigation bar.
-    // Two guards prevent it on flip outer screens:
-    //
-    // 1. createNavigationBar() checks:
-    //      isFlipTinyScreen(context) → return (fixed by LockScreenHook)
-    //      mIsFsgMode && mHideGestureLine → return (hooked below)
-    //
-    // 2. onScreenLayoutSizeChanged() checks:
-    //      configuration.screenType == 1 → removeNavigationBar(0)
-    //      This uses the RAW screenType FIELD, bypassing ScreenTypeHook!
-    //      Fix: temporarily force screenType=0 so the check fails,
-    //      allowing the nav bar to be created/kept.
-    //
-    // Without NavigationBar, bottom gestures (Home/Recents) are absent
-    // in all apps. Desktop works via miuihome's NavStubView (LauncherHook).
-    private fun hookNavigationBar(param: PackageReadyParam) {
-        val implClass = param.classLoader.loadClass(
-            "com.android.systemui.navigationbar.NavigationBarControllerImpl")
-
-        // Hook onScreenLayoutSizeChanged(Configuration)
-        // Original: if (configuration.screenType == 1) removeNavigationBar(0)
-        // Fix: temporarily set screenType=0 so isFlipTinyScreen check fails
+    /**
+     * SystemUIToast.getGravity() → return CENTER_HORIZONTAL | BOTTOM (0x51).
+     *
+     * MIUI renders toasts through SystemUI (ToastUI → SystemUIToast).
+     * SystemUIToast has a BUG: it reads config_whenToStartHubModeDefault
+     * (value=0 = NO_GRAVITY) instead of config_toastDefaultGravity
+     * (value=0x51 = CENTER_HORIZONTAL | BOTTOM).
+     */
+    private fun hookToastGravity(param: PackageReadyParam) {
         runCatching {
-            val method = implClass.getDeclaredMethod("onScreenLayoutSizeChanged",
-                android.content.res.Configuration::class.java)
+            val cls = param.classLoader.loadClass(
+                "com.android.systemui.toast.SystemUIToast")
+            val method = cls.getDeclaredMethod("getGravity")
             method.isAccessible = true
-            val stField = android.content.res.Configuration::class.java
-                .getDeclaredField("screenType")
-            stField.isAccessible = true
-            hook(method) { chain ->
-                val config = chain.args[0] as? android.content.res.Configuration
-                val orig = if (config != null) stField.getInt(config) else -1
-                if (orig == 1) {
-                    stField.setInt(config, 0)  // fool screenType == 1 check
-                }
-                try {
-                    chain.proceed()
-                } finally {
-                    if (orig == 1 && config != null) {
-                        stField.setInt(config, orig)  // restore
-                    }
-                }
+            hook(method, replaceResult(0x51))
+            log("SystemUI: ✓ SystemUIToast.getGravity → 0x51")
+        }.onFailure { log("SystemUI: SystemUIToast.getGravity failed", it) }
+
+        // ClickableToast — same bug
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "com.android.systemui.statusbar.views.ClickableToast")
+            val ctor = cls.declaredConstructors.firstOrNull { it.parameterCount >= 3 }
+            if (ctor != null) {
+                ctor.isAccessible = true
+                hook(ctor, after { chain, _ ->
+                    runCatching { chain.thisObject?.setField("mGravity", 0x51) }
+                    null
+                })
+                log("SystemUI: ✓ ClickableToast gravity → 0x51")
             }
-            log("NavBar: hooked onScreenLayoutSizeChanged")
-        }.onFailure { log("NavBar: onScreenLayoutSizeChanged failed", it) }
-
-        // Hook createNavigationBar(Display, Bundle, RegisterStatusBarResult)
-        // Bypass the mIsFsgMode && mHideGestureLine guard (line 254).
-        // Force both fields to false before the original method runs.
-        runCatching {
-            val method = implClass.getDeclaredMethod("createNavigationBar",
-                android.view.Display::class.java,
-                android.os.Bundle::class.java,
-                Class.forName("com.android.internal.statusbar.RegisterStatusBarResult"))
-            method.isAccessible = true
-            hook(method, before { chain ->
-                runCatching {
-                    val obj = chain.thisObject
-                    val injectorField = implClass.getDeclaredField("mNavigationModeControllerInjector")
-                    injectorField.isAccessible = true
-                    val injector = injectorField.get(obj)
-                    if (injector != null) {
-                        injector.javaClass.getDeclaredField("mIsFsgMode")
-                            .apply { isAccessible = true; setBoolean(injector, false) }
-                        injector.javaClass.getDeclaredField("mHideGestureLine")
-                            .apply { isAccessible = true; setBoolean(injector, false) }
-                    }
-                }
-            })
-            log("NavBar: hooked createNavigationBar")
-        }.onFailure { log("NavBar: createNavigationBar failed", it) }
+        }.onFailure { log("SystemUI: ClickableToast failed", it) }
     }
-
 }

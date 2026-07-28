@@ -43,8 +43,6 @@ object DisplayStateHook {
             hookDisplayEnabledLocked(param)
             hookExternalDisplayDisable(param)
             hookDisplayInfoCutoutZero(param)
-            hookLayoutCutoutMode(param)
-            hookComputeFrames(param)
             hookAodOuterScreen(param)
         }
     }
@@ -306,95 +304,6 @@ object DisplayStateHook {
                 log("DisplayState: ✓ DisplayInfo.displayCutout → NO_CUTOUT")
             }.onFailure { log("DisplayState: getDisplayInfoLocked failed", it) }
         }.onFailure { log("DisplayState: displayCutout zero failed", it) }
-    }
-
-    // ── §7. Force ALWAYS cutout mode in system_server ──────────────────
-    //
-    // WindowLayout.computeFrames() calls getLayoutInDisplayCutoutMode() to
-    // decide whether to clip frames by cutout-safe area. Toast windows have
-    // mode=0 (DEFAULT) → clipping applies → 62px left-shift.
-    //
-    // ActivityLifecycleHook only covers Activity windows. This hook covers
-    // ALL windows (Toast, dialog, etc.) by forcing ALWAYS(3) at the
-    // WindowLayoutStubImpl level in system_server where computeFrames() runs.
-    //
-    // Note: GlobalCutoutHook also hooks this method from app processes — but
-    // that relies on boot classloader sharing. This system_server version
-    // is the reliable one.
-    private fun hookLayoutCutoutMode(param: SystemServerStartingParam) {
-        runCatching {
-            val cls = param.classLoader.loadClass(
-                "android.view.WindowLayoutStubImpl")
-            val method = cls.getDeclaredMethod("getLayoutInDisplayCutoutMode",
-                android.view.WindowManager.LayoutParams::class.java)
-            method.isAccessible = true
-            var diagDone = false
-            hook(method) { chain ->
-                val attrs = chain.args[0]
-                val origMode = chain.proceed() as? Int ?: 0
-                if (!diagDone) {
-                    diagDone = true
-                    val type = runCatching { attrs?.getField("type") as? Int }.getOrNull()
-                    val title = runCatching { attrs?.callMethod("getTitle") as? String }.getOrNull()
-                    val pkg = runCatching { attrs?.getField("packageName") as? String }.getOrNull()
-                    log("DIAG_TOAST: getLayoutInDisplayCutoutMode type=$type title=$title pkg=$pkg origMode=$origMode → forced 3")
-                }
-                3  // LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-            }
-            log("DisplayState: ✓ getLayoutInDisplayCutoutMode → ALWAYS (system_server)")
-        }.onFailure { log("DisplayState: getLayoutInDisplayCutoutMode failed", it) }
-    }
-
-    // ── §7b. computeFrames output fix — defense-in-depth ─────────────────
-    //
-    // GlobalCutoutHook.hookLayoutCutoutMode forces getLayoutInDisplayCutoutMode()
-    // → ALWAYS (3), which skips the cutout clipping in computeFrames(). But if
-    // that hook fails to affect system_server (classloader isolation edge case),
-    // this hook directly fixes the output frames after computeFrames() runs.
-    //
-    // Expand the right edge of parentFrame and displayFrame to the full
-    // display width if they were clipped by cutout-safe area.
-    private fun hookComputeFrames(param: SystemServerStartingParam) {
-        runCatching {
-            val wlClass = param.classLoader.loadClass("android.view.WindowLayout")
-            val methods = wlClass.declaredMethods.filter { it.name == "computeFrames" }
-            log("DisplayState: computeFrames candidates: ${methods.map { it.parameterCount }}")
-            val method = methods.maxByOrNull { it.parameterCount }
-            if (method == null) {
-                log("DisplayState: computeFrames NOT FOUND")
-                return@runCatching
-            }
-            method.isAccessible = true
-            var diagDone = false
-            hook(method) { chain ->
-                val attrs = chain.args[0]
-                val windowType = runCatching { attrs?.getField("type") as? Int }.getOrNull()
-                val windowBounds = chain.args[3] as? android.graphics.Rect
-                val fullRight = windowBounds?.right ?: 0
-                val result = chain.proceed()
-                if (fullRight <= 0) return@hook result
-                val frames = chain.args[chain.args.size - 1]  // last arg = ClientWindowFrames
-                if (frames != null) {
-                    val pf = frames.getField("parentFrame") as? android.graphics.Rect
-                    val df = frames.getField("displayFrame") as? android.graphics.Rect
-                    // Diagnostic: log toast and first few windows
-                    if (!diagDone || windowType == 2005) {
-                        val title = runCatching { attrs?.callMethod("getTitle") as? String }.getOrNull()
-                        log("DIAG_TOAST: computeFrames type=$windowType title=$title fullRight=$fullRight pf.r=${pf?.right} df.r=${df?.right}")
-                        if (windowType == 2005) diagDone = true
-                    }
-                    if (pf != null && pf.right in 1 until fullRight) {
-                        log("DIAG_TOAST: FIX parentFrame right ${pf.right} → $fullRight (type=$windowType)")
-                        pf.right = fullRight
-                    }
-                    if (df != null && df.right in 1 until fullRight) {
-                        df.right = fullRight
-                    }
-                }
-                result
-            }
-            log("DisplayState: ✓ computeFrames output fix installed (${method.parameterCount} params)")
-        }.onFailure { log("DisplayState: computeFrames failed", it) }
     }
 
     // ── 5. AOD on outer screen: prevent sleep + block dream timeouts ───
