@@ -43,6 +43,7 @@ object DisplayStateHook {
             hookDisplayEnabledLocked(param)
             hookExternalDisplayDisable(param)
             hookDisplayInfoCutoutZero(param)
+            hookComputeFrames(param)
             hookAodOuterScreen(param)
         }
     }
@@ -267,6 +268,49 @@ object DisplayStateHook {
                 })
             log("DisplayState: ✓ DisplayInfo.displayCutout → NO_CUTOUT")
         }.onFailure { log("DisplayState: displayCutout zero failed", it) }
+    }
+
+    // ── §7. computeFrames output fix — defense-in-depth ─────────────────
+    //
+    // GlobalCutoutHook.hookLayoutCutoutMode forces getLayoutInDisplayCutoutMode()
+    // → ALWAYS (3), which skips the cutout clipping in computeFrames(). But if
+    // that hook fails to affect system_server (classloader isolation edge case),
+    // this hook directly fixes the output frames after computeFrames() runs.
+    //
+    // Expand the right edge of parentFrame and displayFrame to the full
+    // display width if they were clipped by cutout-safe area.
+    private fun hookComputeFrames(param: SystemServerStartingParam) {
+        runCatching {
+            val wlClass = param.classLoader.loadClass("android.view.WindowLayout")
+            val methods = wlClass.declaredMethods.filter { it.name == "computeFrames" }
+            log("DisplayState: computeFrames candidates: ${methods.map { it.parameterCount }}")
+            val method = methods.maxByOrNull { it.parameterCount }
+            if (method == null) {
+                log("DisplayState: computeFrames NOT FOUND")
+                return@runCatching
+            }
+            method.isAccessible = true
+            hook(method) { chain ->
+                val windowBounds = chain.args[3] as? android.graphics.Rect
+                val fullRight = windowBounds?.right ?: 0
+                val result = chain.proceed()
+                if (fullRight <= 0) return@hook result
+                val frames = chain.args[chain.args.size - 1]  // last arg = ClientWindowFrames
+                if (frames != null) {
+                    val pf = frames.getField("parentFrame") as? android.graphics.Rect
+                    val df = frames.getField("displayFrame") as? android.graphics.Rect
+                    if (pf != null && pf.right in 1 until fullRight) {
+                        log("DisplayState: computeFrames parentFrame right ${pf.right} → $fullRight")
+                        pf.right = fullRight
+                    }
+                    if (df != null && df.right in 1 until fullRight) {
+                        df.right = fullRight
+                    }
+                }
+                result
+            }
+            log("DisplayState: ✓ computeFrames output fix installed (${method.parameterCount} params)")
+        }.onFailure { log("DisplayState: computeFrames failed", it) }
     }
 
     // ── 5. AOD on outer screen: prevent sleep + block dream timeouts ───

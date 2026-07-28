@@ -10,79 +10,12 @@ object AppBoundsHook {
         if (!Config.displayCutout) { log("AppBoundsHook: DISABLED by persist.flipunlock.display.cutout"); return }
         log("AppBoundsHook: setting up")
         safeHook("AppBounds") {
-            hookComputeFrames(param)
             hookFillInsetsState(param)
             hookLaunchActivityItem(param)
             hookScheduleConfigurationChanged(param)
             hookScheduleClientTransactionItem(param)
         }
         log("AppBoundsHook: done")
-    }
-
-    /**
-     * WindowLayout.computeFrames() → force displayCutoutSafe to full bounds.
-     *
-     * computeFrames() clips outParentFrame to displayCutoutSafeExceptMaybeBars
-     * (a copy of displayCutoutSafe). For toast on the outer screen, this clip
-     * narrows the parent frame from 1208px to 1084px (safeInsetRight=124).
-     * Gravity.CENTER_HORIZONTAL then centers at (1084-w)/2 instead of (1208-w)/2
-     * → 62px left-shift.
-     *
-     * Options A (InsetsState.getDisplayCutoutSafe) and B (DisplayFrames.update)
-     * both failed — the displayCutoutSafe passed to computeFrames apparently
-     * doesn't come from the global InsetsState/DisplayFrames, or it's cached
-     * before our hooks can modify it.
-     *
-     * This is the FINAL choke point — modify displayCutoutSafe BEFORE the
-     * clipping happens, directly in computeFrames. No upstream state matters.
-     */
-    private fun hookComputeFrames(param: SystemServerStartingParam) {
-        runCatching {
-            val displayCutoutClass = param.classLoader.loadClass("android.view.DisplayCutout")
-            val noCutout = displayCutoutClass.getDeclaredField("NO_CUTOUT")
-                .apply { isAccessible = true }.get(null) ?: return@runCatching
-            val insetsTypeClass = param.classLoader.loadClass("android.view.WindowInsets\$Type")
-            val displayCutoutType = insetsTypeClass.method("displayCutout").invoke(null) as? Int ?: 0
-
-            val wlClass = param.classLoader.loadClass("android.view.WindowLayout")
-            // computeFrames(LayoutParams, InsetsState, Rect displayCutoutSafe, ...)
-            val method = wlClass.getDeclaredMethod("computeFrames",
-                android.view.WindowManager.LayoutParams::class.java,
-                param.classLoader.loadClass("android.view.InsetsState"),
-                android.graphics.Rect::class.java,      // displayCutoutSafe
-                android.graphics.Rect::class.java,      // windowBounds
-                Int::class.javaPrimitiveType!!,
-                Int::class.javaPrimitiveType!!,
-                Int::class.javaPrimitiveType!!,
-                Int::class.javaPrimitiveType!!,
-                Float::class.javaPrimitiveType!!,
-                param.classLoader.loadClass("android.view.ClientWindowFrames"))
-            method.isAccessible = true
-            hook(method, before { chain ->
-                // Fix BOTH sources of toast left-shift:
-                //
-                // 1. InsetsState (args[1]): calculateInsets() reads cutout sources
-                //    → outDisplayFrame.right = 1208 - 124 = 1084
-                //    → parentFrame.right = 1084 → X = (1084-w)/2 → 62px left
-                //    Fix: replace displayCutout supplier + remove cutout sources.
-                val state = chain.args[1]
-                runCatching { state.callMethod("setDisplayCutout", noCutout) }
-                runCatching {
-                    val size = state.callMethod("sourceSize") as? Int ?: 0
-                    for (i in size - 1 downTo 0) {
-                        val source = state.callMethod("sourceAt", i) ?: continue
-                        if (source.callMethod("getType") as? Int == displayCutoutType) {
-                            state.callMethod("removeSourceAt", i)
-                        }
-                    }
-                }
-                // 2. displayCutoutSafe (args[2]): intersectOrClamp clips parentFrame
-                //    to this rect. Force full bounds as defense-in-depth.
-                val safe = chain.args[2] as? android.graphics.Rect
-                safe?.set(-100000, -100000, 100000, 100000)
-            })
-            log("AppBounds: ✓ computeFrames — zero cutout sources + full safe bounds")
-        }.onFailure { log("AppBounds: computeFrames failed", it) }
     }
 
     /**

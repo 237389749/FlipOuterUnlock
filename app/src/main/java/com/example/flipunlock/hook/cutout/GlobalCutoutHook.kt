@@ -33,12 +33,42 @@ object GlobalCutoutHook : BaseHook() {
         // same reason. Keyboard width regression traced to b668164 (Build #220).
         if (pkg in Exclusions.GLOBAL_CUTOUT) return
         safeHook("GlobalCutout") {
+            hookLayoutCutoutMode(param)
             hookDisplayGetCutout(pkg)
             hookWindowInsetsGetCutout(pkg)
             hookFlipFoldedCutoutStub(param)
             hookSizeCompatScaleMode(param)
             hookDisplayMetricsDiag(param)
         }
+    }
+
+    /**
+     * WindowLayoutStubImpl.getLayoutInDisplayCutoutMode() → ALWAYS (3).
+     *
+     * This is THE hook that fixes toast/hint centering. computeFrames() reads
+     * this method to decide whether to clip the parent frame by cutout-safe
+     * area. With mode=0 (DEFAULT), the toast window gets clipped to 1084px
+     * (1208 - safeInsetRight 124) → Gravity.CENTER_HORIZONTAL computes
+     * X = (1084-w)/2 → 62px left-shift.
+     *
+     * With mode=3 (ALWAYS), computeFrames() skips ALL cutout clipping:
+     *   if (cutoutMode2 == 3 || cutout2.isEmpty()) { /* skip */ }
+     * → parentFrame stays at full 1208px → toast centers correctly.
+     *
+     * WindowLayoutStubImpl is in miui-framework.jar (boot classpath) —
+     * hooking it from an app process affects system_server's calls too,
+     * since the class is loaded by the shared boot classloader.
+     */
+    private fun hookLayoutCutoutMode(param: PackageReadyParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass(
+                "android.view.WindowLayoutStubImpl")
+            val method = cls.getDeclaredMethod("getLayoutInDisplayCutoutMode",
+                android.view.WindowManager.LayoutParams::class.java)
+            method.isAccessible = true
+            hook(method, replaceResult(3))  // LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            log("GlobalCutout: getLayoutInDisplayCutoutMode → ALWAYS for ${param.packageName}")
+        }.onFailure { log("GlobalCutout: getLayoutInDisplayCutoutMode failed", it) }
     }
 
     /**
