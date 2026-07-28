@@ -44,7 +44,48 @@ object CutoutHook : BaseHook() {
             hookDisplayGetCutout()
             hookDisplayFlipFoldedCutout()
             hookWindowInsetsGetCutout()
+            hookComputeFramesDiag(param.classLoader)
         }
+    }
+
+    /**
+     * Diagnostic: hook WindowLayout.computeFrames() to trace toast layout.
+     * Logs EVERY window layout and fixes parentFrame right edge if clipped.
+     */
+    private fun hookComputeFramesDiag(classLoader: ClassLoader) {
+        runCatching {
+            val wlClass = classLoader.loadClass("android.view.WindowLayout")
+            val method = wlClass.declaredMethods.firstOrNull { it.name == "computeFrames" }
+                ?: return@runCatching
+            method.isAccessible = true
+            var callCount = 0
+            hook(method) { chain ->
+                callCount++
+                val attrs = chain.args[0]
+                val windowType = runCatching { attrs?.getField("type") as? Int }.getOrNull()
+                val windowBounds = chain.args[3] as? Rect
+                val fullRight = windowBounds?.right ?: 0
+                val result = chain.proceed()
+                // Log first 5 calls + every toast window
+                if (callCount <= 5 || windowType == 2005 || windowType == 2006) {
+                    val title = runCatching { attrs?.callMethod("getTitle") as? String }.getOrNull()
+                    val frames = chain.args[chain.args.size - 1]
+                    val pf = frames?.getField("parentFrame") as? Rect
+                    log("DIAG: computeFrames #$callCount type=$windowType title=$title fullRight=$fullRight pf.r=${pf?.right}")
+                }
+                // Fix: expand right edge if clipped by cutout
+                if (fullRight in 1208..1392) {
+                    val frames = chain.args[chain.args.size - 1]
+                    val pf = frames?.getField("parentFrame") as? Rect
+                    if (pf != null && pf.right in 1 until fullRight) {
+                        pf.right = fullRight
+                        log("DIAG: FIX parentFrame right → $fullRight (type=$windowType)")
+                    }
+                }
+                result
+            }
+            log("CutoutHook: ✓ computeFrames diag installed")
+        }.onFailure { log("CutoutHook: computeFrames diag FAILED", it) }
     }
 
     override fun setupHooks(param: PackageReadyParam) {
