@@ -10,7 +10,7 @@ object AppBoundsHook {
         if (!Config.displayCutout) { log("AppBoundsHook: DISABLED by persist.flipunlock.display.cutout"); return }
         log("AppBoundsHook: setting up")
         safeHook("AppBounds") {
-            hookDisplayFramesUpdate(param)
+            hookComputeFrames(param)
             hookFillInsetsState(param)
             hookLaunchActivityItem(param)
             hookScheduleConfigurationChanged(param)
@@ -20,58 +20,49 @@ object AppBoundsHook {
     }
 
     /**
-     * DisplayFrames.update() → replace displayCutout with NO_CUTOUT.
+     * WindowLayout.computeFrames() → force displayCutoutSafe to full bounds.
      *
-     * DisplayFrames.mInsetsState is the GLOBAL InsetsState shared with
-     * WindowLayout.computeFrames(). It caches the boot-time DisplayCutout
-     * (safeInsetRight=124) from before LSPosed hooks load. computeFrames()
-     * reads getDisplayCutoutSafe() from this cached cutout → parent frame
-     * clipped to 1084px → toast centered at 542px instead of 604px → 62px
-     * left-shift.
+     * computeFrames() clips outParentFrame to displayCutoutSafeExceptMaybeBars
+     * (a copy of displayCutoutSafe). For toast on the outer screen, this clip
+     * narrows the parent frame from 1208px to 1084px (safeInsetRight=124).
+     * Gravity.CENTER_HORIZONTAL then centers at (1084-w)/2 instead of (1208-w)/2
+     * → 62px left-shift.
      *
-     * Hooking Display.getCutout() → NO_CUTOUT doesn't fix this because
-     * InsetsState reads from an internal supplier set at boot, not from
-     * Display.getCutout(). Hooking getDisplayCutoutSafe() directly didn't
-     * work either (the cutout source supplier remains unchanged).
+     * Options A (InsetsState.getDisplayCutoutSafe) and B (DisplayFrames.update)
+     * both failed — the displayCutoutSafe passed to computeFrames apparently
+     * doesn't come from the global InsetsState/DisplayFrames, or it's cached
+     * before our hooks can modify it.
      *
-     * Fix: hook DisplayFrames.update() — the single method that sets
-     * state.setDisplayCutout(). Replace the displayCutout parameter with
-     * NO_CUTOUT. The early-return check compares cached real cutout ≠
-     * NO_CUTOUT → update proceeds → InsetsState stores NO_CUTOUT →
-     * getDisplayCutoutSafe() returns full bounds → toast centers.
+     * This is the FINAL choke point — modify displayCutoutSafe BEFORE the
+     * clipping happens, directly in computeFrames. No upstream state matters.
      */
-    private fun hookDisplayFramesUpdate(param: SystemServerStartingParam) {
+    private fun hookComputeFrames(param: SystemServerStartingParam) {
         runCatching {
-            val dfClass = param.classLoader.loadClass(
-                "com.android.server.wm.DisplayFrames")
-            val displayCutoutClass = param.classLoader.loadClass(
-                "android.view.DisplayCutout")
-            val noCutout = displayCutoutClass.getDeclaredField("NO_CUTOUT")
-                .apply { isAccessible = true }.get(null)
-                ?: return@runCatching
-
-            // update(int rotation, int w, int h, DisplayCutout displayCutout,
-            //        RoundedCorners roundedCorners, PrivacyIndicatorBounds indicatorBounds,
-            //        DisplayShape displayShape)
-            val method = dfClass.getDeclaredMethod("update",
+            val wlClass = param.classLoader.loadClass("android.view.WindowLayout")
+            // computeFrames(LayoutParams, InsetsState, Rect displayCutoutSafe,
+            //   Rect windowBounds, int windowingMode, int requestedWidth,
+            //   int requestedHeight, int requestedVisibleTypes,
+            //   float compatScale, ClientWindowFrames)
+            val method = wlClass.getDeclaredMethod("computeFrames",
+                android.view.WindowManager.LayoutParams::class.java,
+                param.classLoader.loadClass("android.view.InsetsState"),
+                android.graphics.Rect::class.java,      // displayCutoutSafe
+                android.graphics.Rect::class.java,      // windowBounds
                 Int::class.javaPrimitiveType!!,
                 Int::class.javaPrimitiveType!!,
                 Int::class.javaPrimitiveType!!,
-                displayCutoutClass,
-                param.classLoader.loadClass("android.view.RoundedCorners"),
-                param.classLoader.loadClass("android.view.PrivacyIndicatorBounds"),
-                param.classLoader.loadClass("android.view.DisplayShape"))
+                Int::class.javaPrimitiveType!!,
+                Float::class.javaPrimitiveType!!,
+                param.classLoader.loadClass("android.view.ClientWindowFrames"))
             method.isAccessible = true
-            hook(method) { chain ->
-                // Replace displayCutout (args[3]) with NO_CUTOUT.
-                // The boot-time cutout cached in mInsetsState differs from
-                // NO_CUTOUT → early-return check fails → update proceeds →
-                // state.setDisplayCutout(NO_CUTOUT) replaces the supplier.
-                chain.args[3] = noCutout
-                chain.proceed()
-            }
-            log("AppBounds: ✓ DisplayFrames.update → NO_CUTOUT")
-        }.onFailure { log("AppBounds: DisplayFrames.update failed", it) }
+            hook(method, before { chain ->
+                // args[2] = displayCutoutSafe — the Rect that clips parentFrame
+                val safe = chain.args[2] as? android.graphics.Rect
+                // Force full-screen bounds → no clipping → toast centers at 1208px
+                safe?.set(-100000, -100000, 100000, 100000)
+            })
+            log("AppBounds: ✓ computeFrames displayCutoutSafe → full bounds")
+        }.onFailure { log("AppBounds: computeFrames failed", it) }
     }
 
     /**
