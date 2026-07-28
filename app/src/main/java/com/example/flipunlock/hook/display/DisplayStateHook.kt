@@ -245,29 +245,66 @@ object DisplayStateHook {
 
     // ── §6. DisplayInfo.displayCutout → NO_CUTOUT ──────────────────────
     //
-    // LogicalDisplay.getDisplayInfoLocked() is THE gateway for DisplayInfo
-    // in system_server. Every window layout, IME frame computation, and
-    // insets calculation reads DisplayInfo from here. The boot-time
-    // DisplayInfo has a real cutout with safeInsetRight=124 baked in
-    // before our CutoutHook/AppBoundsHook fire. Replacing displayCutout
-    // with NO_CUTOUT here closes this cached-value leak path.
-
+    // calculateDisplayCutoutForRotation(int) → NO_CUTOUT — prevents new
+    // cutout from being computed during rotation events.
+    //
+    // InsetsState.getDisplayCutoutSafe(Rect) → restore full display bounds
+    // after the original method narrows them. This prevents computeFrames()
+    // from clipping parentFrame to 1084px (1208 - safeInsetRight 124).
+    //
+    // LogicalDisplay.getDisplayInfoLocked() → NO_CUTOUT — defense-in-depth
+    // for the cached DisplayInfo field path.
     private fun hookDisplayInfoCutoutZero(param: SystemServerStartingParam) {
         runCatching {
-            val logicalDisplayClass = param.classLoader.loadClass(
-                "com.android.server.display.LogicalDisplay")
             val displayCutoutClass = param.classLoader.loadClass(
                 "android.view.DisplayCutout")
             val noCutout = displayCutoutClass.field("NO_CUTOUT").get(null)
                 ?: return@runCatching
 
-            hook(logicalDisplayClass.method("getDisplayInfoLocked"),
-                after { _, result ->
-                    val info = result ?: return@after result
-                    info.setField("displayCutout", noCutout)
-                    result
+            // Hook 1: calculateDisplayCutoutForRotation → NO_CUTOUT
+            runCatching {
+                val dcClass = param.classLoader.loadClass(
+                    "com.android.server.wm.DisplayContent")
+                val method = dcClass.getDeclaredMethod(
+                    "calculateDisplayCutoutForRotation",
+                    Int::class.javaPrimitiveType!!)
+                method.isAccessible = true
+                hook(method, replaceResult(noCutout))
+                log("DisplayState: calculateDisplayCutoutForRotation → NO_CUTOUT")
+            }.onFailure { log("DisplayState: calculateDisplayCutoutForRotation failed", it) }
+
+            // Hook 2: InsetsState.getDisplayCutoutSafe → restore full bounds
+            runCatching {
+                val insetsStateClass = param.classLoader.loadClass(
+                    "android.view.InsetsState")
+                val method = insetsStateClass.getDeclaredMethod(
+                    "getDisplayCutoutSafe",
+                    android.graphics.Rect::class.java)
+                method.isAccessible = true
+                hook(method, after { chain, _ ->
+                    val outBounds = chain.args[0] as? android.graphics.Rect
+                    val beforeRight = outBounds?.right
+                    outBounds?.set(-100000, -100000, 100000, 100000)
+                    if (beforeRight != null && beforeRight != 100000) {
+                        log("DIAG: getDisplayCutoutSafe right $beforeRight → 100000 (full)")
+                    }
+                    null
                 })
-            log("DisplayState: ✓ DisplayInfo.displayCutout → NO_CUTOUT")
+                log("DisplayState: InsetsState.getDisplayCutoutSafe → full bounds")
+            }.onFailure { log("DisplayState: getDisplayCutoutSafe failed", it) }
+
+            // Hook 3: LogicalDisplay.getDisplayInfoLocked → NO_CUTOUT
+            runCatching {
+                val logicalDisplayClass = param.classLoader.loadClass(
+                    "com.android.server.display.LogicalDisplay")
+                hook(logicalDisplayClass.method("getDisplayInfoLocked"),
+                    after { _, result ->
+                        val info = result ?: return@after result
+                        info.setField("displayCutout", noCutout)
+                        result
+                    })
+                log("DisplayState: ✓ DisplayInfo.displayCutout → NO_CUTOUT")
+            }.onFailure { log("DisplayState: getDisplayInfoLocked failed", it) }
         }.onFailure { log("DisplayState: displayCutout zero failed", it) }
     }
 
