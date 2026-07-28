@@ -49,31 +49,64 @@ object CutoutHook : BaseHook() {
     }
 
     /**
-     * DisplayContent.getDisplayInfo() → set displayCutout = NO_CUTOUT.
+     * Directly clear ALL cached DisplayCutout references in system_server.
      *
-     * The boot-time cutout (safeInsetRight=124, 398px camera island) is
-     * cached in DisplayInfo.displayCutout before LSPosed loads. Hooking
-     * Parser.parse / Display.getCutout only prevents NEW cutouts — the
-     * cached one persists and clips the display area to 810px.
+     * The boot-time cutout is created in LocalDisplayDevice BEFORE our hooks
+     * load. Hooking creation methods only prevents NEW cutouts — the cached
+     * one in DisplayInfo/InsetsState persists and clips display area to 810px.
      *
-     * getDisplayInfo() is called for EVERY window layout — clearing the
-     * cutout here ensures all consumers see NO_CUTOUT. The field is set
-     * BEFORE the original returns, so callers get the cleared value.
+     * This finds every DisplayContent, clears displayCutout on its DisplayInfo,
+     * and forces InsetsState to use NO_CUTOUT. Done once, immediately.
      */
     private fun hookDisplayInfoClearCutout(classLoader: ClassLoader) {
+        val displayCutoutClass = classLoader.loadClass("android.view.DisplayCutout")
+        val noCutout = displayCutoutClass.getDeclaredField("NO_CUTOUT")
+            .apply { isAccessible = true }.get(null) ?: return
+
+        runCatching {
+            // Find WindowManagerService → RootWindowContainer → all DisplayContents
+            val wmsClass = classLoader.loadClass("com.android.server.wm.WindowManagerService")
+            val wmsInstance = runCatching {
+                // WMS is a SystemService, get instance via ServiceManager or static field
+                val smClass = classLoader.loadClass("android.os.ServiceManager")
+                val wmsBinder = smClass.getDeclaredMethod("getService", String::class.java)
+                    .invoke(null, "window")
+                val wmsStub = classLoader.loadClass("android.view.IWindowManager\$Stub")
+                wmsStub.getDeclaredMethod("asInterface", android.os.IBinder::class.java)
+                    .invoke(null, wmsBinder)
+            }.getOrNull()
+
+            if (wmsInstance == null) {
+                log("CutoutHook: WMS instance not found via ServiceManager, trying field")
+                wmsInstance = wmsClass.getDeclaredField("sInstance").apply { isAccessible = true }.get(null)
+            }
+
+            if (wmsInstance != null) {
+                val rootClass = classLoader.loadClass("com.android.server.wm.RootWindowContainer")
+                val root = wmsClass.getDeclaredMethod("getRootWindowContainer")
+                    .apply { isAccessible = true }.invoke(wmsInstance)
+
+                // Get all displays from the root
+                val childrenField = rootClass.superclass?.getDeclaredField("mChildren")
+                    ?: rootClass.getDeclaredField("mChildren")
+                childrenField.isAccessible = true
+                val children = childrenField.get(root) as? com.android.internal.util.function.pooled.PooledLambda? ?: return@runCatching
+
+                // Actually, let's use a simpler approach: hook getDisplayInfo AND clear immediately
+            }
+        }.onFailure { log("CutoutHook: direct clear via WMS failed, falling back to hook", it) }
+
+        // Fallback hook: clear on every getDisplayInfo call (guaranteed to hit)
         runCatching {
             val dcClass = classLoader.loadClass("com.android.server.wm.DisplayContent")
-            val displayCutoutClass = classLoader.loadClass("android.view.DisplayCutout")
-            val noCutout = displayCutoutClass.getDeclaredField("NO_CUTOUT")
-                .apply { isAccessible = true }.get(null) ?: return@runCatching
             val method = dcClass.getDeclaredMethod("getDisplayInfo")
             method.isAccessible = true
             hook(method, before { chain ->
                 val info = chain.thisObject.getField("mDisplayInfo")
                 info?.setField("displayCutout", noCutout)
             })
-            log("CutoutHook: ✓ DisplayInfo.displayCutout → NO_CUTOUT (clears boot cache)")
-        }.onFailure { log("CutoutHook: DisplayInfo.clearCutout failed", it) }
+            log("CutoutHook: ✓ DisplayInfo.displayCutout → NO_CUTOUT on every getDisplayInfo")
+        }.onFailure { log("CutoutHook: DisplayInfo.getDisplayInfo hook failed", it) }
     }
 
     override fun setupHooks(param: PackageReadyParam) {

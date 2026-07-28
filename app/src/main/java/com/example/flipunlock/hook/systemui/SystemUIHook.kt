@@ -47,40 +47,33 @@ object SystemUIHook : BaseHook() {
     // (line 151: isEmpty || dimsChanged). This forces re-read of cutout
     // on every call — and GlobalCutoutHook makes Display.getCutout()→NO_CUTOUT.
     private fun hookHideDisplayCutoutOrganizer(param: PackageReadyParam) {
-        // Try both package names — R8 may obfuscate the package at runtime.
-        val classNames = listOf(
-            "com.android.wm.shell.hidedisplaycutout.HideDisplayCutoutOrganizer",
-            "com.android.p134wm.shell.hidedisplaycutout.HideDisplayCutoutOrganizer",
-        )
-        var cls: Class<*>? = null
-        for (name in classNames) {
-            runCatching {
-                cls = param.classLoader.loadClass(name)
-                log("SystemUI: found HideDisplayCutoutOrganizer as $name")
-            }
-            if (cls != null) break
-        }
-        if (cls == null) {
-            log("SystemUI: HideDisplayCutoutOrganizer NOT FOUND — tried ${classNames.joinToString()}")
-            return
-        }
+        // The 398px crop is applied to the display Surface BEFORE our hooks
+        // load. We can't undo it by hooking HideDisplayCutoutOrganizer methods.
+        //
+        // Instead, intercept SurfaceControl.Transaction.setWindowCrop() to
+        // detect and fix the cutout-cropped display area in real time.
+        // When a crop of ~810px width is applied (1208 - 398 cutout), expand
+        // it to full 1208px. This works regardless of timing.
+
         runCatching {
-            val method = cls.getDeclaredMethod("updateBoundsAndOffsets",
-                Boolean::class.javaPrimitiveType!!)
+            val txnClass = param.classLoader.loadClass("android.view.SurfaceControl\$Transaction")
+            val leashClass = param.classLoader.loadClass("android.view.SurfaceControl")
+            val method = txnClass.getDeclaredMethod("setWindowCrop",
+                leashClass, Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)
             method.isAccessible = true
             hook(method, before { chain ->
-                val obj = chain.thisObject
-                runCatching {
-                    val db = obj.getField("mDefaultDisplayBounds") as? android.graphics.Rect
-                    db?.setEmpty()
-                }
-                runCatching {
-                    obj.setField("mDefaultCutoutInsets", android.graphics.Insets.NONE)
-                    obj.setField("mCurrentCutoutInsets", android.graphics.Insets.NONE)
+                val width = chain.args[1] as? Int ?: return@before
+                val height = chain.args[2] as? Int ?: return@before
+                // 810px = 1208 - 398 (cutout-cropped display width)
+                // 1084px = 1208 - 124 (safeInset-cropped display width)
+                // If cropped to cutout size, expand to full 1208px
+                if (width > 0 && width < 1100 && height > 1300) {
+                    chain.args[1] = 1208
+                    log("SystemUI: setWindowCrop ${width}x$height → 1208x$height (fix cutout crop)")
                 }
             })
-            log("SystemUI: ✓ HideDisplayCutoutOrganizer.updateBoundsAndOffsets → zero insets")
-        }.onFailure { log("SystemUI: HideDisplayCutoutOrganizer hook failed", it) }
+            log("SystemUI: ✓ SurfaceControl.setWindowCrop — intercepting cutout crops")
+        }.onFailure { log("SystemUI: setWindowCrop hook failed", it) }
     }
 
     // ── DecorWindowManagerImpl.shouldHideDecorWindow ────────────────────
