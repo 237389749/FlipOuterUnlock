@@ -47,27 +47,40 @@ object SystemUIHook : BaseHook() {
     // (line 151: isEmpty || dimsChanged). This forces re-read of cutout
     // on every call — and GlobalCutoutHook makes Display.getCutout()→NO_CUTOUT.
     private fun hookHideDisplayCutoutOrganizer(param: PackageReadyParam) {
+        // Try both package names — R8 may obfuscate the package at runtime.
+        val classNames = listOf(
+            "com.android.wm.shell.hidedisplaycutout.HideDisplayCutoutOrganizer",
+            "com.android.p134wm.shell.hidedisplaycutout.HideDisplayCutoutOrganizer",
+        )
+        var cls: Class<*>? = null
+        for (name in classNames) {
+            runCatching {
+                cls = param.classLoader.loadClass(name)
+                log("SystemUI: found HideDisplayCutoutOrganizer as $name")
+            }
+            if (cls != null) break
+        }
+        if (cls == null) {
+            log("SystemUI: HideDisplayCutoutOrganizer NOT FOUND — tried ${classNames.joinToString()}")
+            return
+        }
         runCatching {
-            val cls = param.classLoader.loadClass(
-                "com.android.wm.shell.hidedisplaycutout.HideDisplayCutoutOrganizer")
             val method = cls.getDeclaredMethod("updateBoundsAndOffsets",
                 Boolean::class.javaPrimitiveType!!)
             method.isAccessible = true
             hook(method, before { chain ->
                 val obj = chain.thisObject
-                // Force re-read cutout by clearing cached bounds
                 runCatching {
                     val db = obj.getField("mDefaultDisplayBounds") as? android.graphics.Rect
                     db?.setEmpty()
                 }
-                // Zero cutout insets
                 runCatching {
                     obj.setField("mDefaultCutoutInsets", android.graphics.Insets.NONE)
                     obj.setField("mCurrentCutoutInsets", android.graphics.Insets.NONE)
                 }
             })
             log("SystemUI: ✓ HideDisplayCutoutOrganizer.updateBoundsAndOffsets → zero insets")
-        }.onFailure { log("SystemUI: HideDisplayCutoutOrganizer failed", it) }
+        }.onFailure { log("SystemUI: HideDisplayCutoutOrganizer hook failed", it) }
     }
 
     // ── DecorWindowManagerImpl.shouldHideDecorWindow ────────────────────
