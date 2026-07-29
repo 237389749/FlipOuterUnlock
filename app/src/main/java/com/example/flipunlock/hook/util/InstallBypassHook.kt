@@ -20,7 +20,11 @@ object InstallBypassHook {
     )
 
     fun hook(param: SystemServerStartingParam) {
-        val enabled = android.os.SystemProperties.getBoolean(PROP, false)
+        val enabled = try {
+            Class.forName("android.os.SystemProperties")
+                .getDeclaredMethod("getBoolean", String::class.java, Boolean::class.javaPrimitiveType!!)
+                .invoke(null, PROP, false) as? Boolean ?: false
+        } catch (_: Exception) { false }
         if (!enabled) {
             log("InstallBypass: disabled (set $PROP=true to enable)")
             return
