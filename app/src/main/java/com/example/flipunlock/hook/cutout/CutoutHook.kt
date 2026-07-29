@@ -144,19 +144,16 @@ object CutoutHook : BaseHook() {
         // Hook relayoutWindow: first call after hooks → force display update
         runCatching {
             val wmsClass = classLoader.loadClass("com.android.server.wm.WindowManagerService")
+            // Actual signature: relayoutWindow(Session, IWindow, LayoutParams,
+            //   int x6, WindowRelayoutResult)
             val method = wmsClass.getDeclaredMethod("relayoutWindow",
-                classLoader.loadClass("android.view.IWindow"), Int::class.javaPrimitiveType!!,
+                classLoader.loadClass("com.android.server.wm.Session"),
+                classLoader.loadClass("android.view.IWindow"),
                 classLoader.loadClass("android.view.WindowManager\$LayoutParams"),
                 Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!,
                 Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!,
-                Int::class.javaPrimitiveType!!, Long::class.javaPrimitiveType!!,
-                classLoader.loadClass("android.window.ClientWindowFrames"),
-                classLoader.loadClass("android.util.MergedConfiguration"),
-                classLoader.loadClass("android.view.SurfaceControl"),
-                classLoader.loadClass("android.view.InsetsState"),
-                Boolean::class.javaPrimitiveType!!,
-                Float::class.javaPrimitiveType!!,
-                Float::class.javaPrimitiveType!!)
+                Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!,
+                classLoader.loadClass("android.view.WindowRelayoutResult"))
             method.isAccessible = true
             var triggered = false
             hook(method, before {
