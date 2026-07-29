@@ -33,6 +33,7 @@ object SystemUIHook : BaseHook() {
         hookStatusBarClock(param)
         hookStatusBarIcons(param)
         hookToastGravity(param)
+        hookToastCutoutFitting(param)
     }
 
     // ── HideDisplayCutoutOrganizer: block Shell-level cutout crop ──────
@@ -183,5 +184,34 @@ object SystemUIHook : BaseHook() {
                 log("SystemUI: ✓ ClickableToast gravity → 0x51")
             }
         }.onFailure { log("SystemUI: ClickableToast failed", it) }
+    }
+
+    /**
+     * Remove TYPE_DISPLAY_CUTOUT from ToastPresenter's fitInsetsTypes.
+     *
+     * ToastPresenter.createLayoutParams() sets fitInsetsTypes to include
+     * ALL system insets (status bar, nav bar, display cutout). On Mix Flip
+     * outer screen the 398px cutout inset shrinks the available area to
+     * 810px, so CENTER_HORIZONTAL places the toast at 405px instead of 604px.
+     *
+     * Overlay-style toasts (type 2017, e.g. BrightnessWarningToast) don't
+     * set fitInsetsTypes and center correctly — this aligns text toasts.
+     */
+    private fun hookToastCutoutFitting(param: PackageReadyParam) {
+        runCatching {
+            val cls = param.classLoader.loadClass("android.widget.ToastPresenter")
+            val ctor = cls.declaredConstructors.first()
+            ctor.isAccessible = true
+            hook(ctor, after { chain, result ->
+                runCatching {
+                    val params = chain.thisObject?.getField("mParams")
+                        as? android.view.WindowManager.LayoutParams ?: return@runCatching
+                    // Remove TYPE_DISPLAY_CUTOUT (128) from fitInsetsTypes
+                    params.fitInsetsTypes = params.fitInsetsTypes and 128.inv()
+                }
+                result
+            })
+            log("SystemUI: ✓ ToastPresenter fitInsetsTypes — removed DISPLAY_CUTOUT")
+        }.onFailure { log("SystemUI: ToastPresenter cutout fitting failed", it) }
     }
 }
