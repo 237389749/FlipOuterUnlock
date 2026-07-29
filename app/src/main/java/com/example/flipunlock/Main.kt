@@ -54,6 +54,7 @@ import com.example.flipunlock.hook.LauncherDensityHook
 // ── util ────────────────────────────────────────────────────────────
 import com.example.flipunlock.hook.util.log
 import com.example.flipunlock.hook.util.Config
+import com.example.flipunlock.hook.util.InstallBypassHook
 
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
@@ -146,6 +147,9 @@ class Main : XposedModule() {
 
         // gesture/
         SubScreenGestureHook.hook(param)    // multi-finger sub-screen gestures
+
+        // util/ — persist.flipunlock.install.bypass
+        InstallBypassHook.hook(param)       // bypass persistent-app install restriction
     }
 
     // ── App-process hook dispatch ────────────────────────────────────
