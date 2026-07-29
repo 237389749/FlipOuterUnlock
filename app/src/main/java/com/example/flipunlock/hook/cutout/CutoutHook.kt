@@ -44,8 +44,72 @@ object CutoutHook : BaseHook() {
             hookDisplayGetCutout()
             hookDisplayFlipFoldedCutout()
             hookWindowInsetsGetCutout()
+            hookToastLayoutClipping(param.classLoader)
             clearDisplayCutoutNow(param.classLoader)
         }
+    }
+
+    /**
+     * Stop WMS from clipping toast parent/display frames by the display cutout.
+     *
+     * WindowLayout.computeFrames() (called by DisplayPolicy.layoutWindowLw)
+     * intersects parentFrame & displayFrame with displayCutoutSafe for any
+     * window without FLAG_LAYOUT_IN_SCREEN — including TYPE_TOAST (2005)
+     * and PRIVILEGED_TOAST (2006). The global InsetsState still carries the
+     * real cutout (fillInsetsState hook only fixes per-window client copies),
+     * so on Mix Flip outer screen displayCutoutSafe.right = 809 (1208 - 399)
+     * and toasts center within 809px → visually shifted ~199px left.
+     *
+     * Fix: temporarily force layoutInDisplayCutoutMode = ALWAYS (3) during
+     * computeFrames for toast windows → the entire cutout-clipping branch
+     * (mode==3 check at entry) is skipped → parent frame stays full 1208px.
+     * Gravity.apply with unspecified hgrav already centers horizontally.
+     */
+    private fun hookToastLayoutClipping(classLoader: ClassLoader) {
+        runCatching {
+            val windowLayoutClass = classLoader.loadClass("android.view.WindowLayout")
+            val method = windowLayoutClass.getDeclaredMethod("computeFrames",
+                android.view.WindowManager.LayoutParams::class.java,
+                classLoader.loadClass("android.view.InsetsState"),
+                Rect::class.java,
+                Rect::class.java,
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+                Float::class.javaPrimitiveType!!,
+                classLoader.loadClass("android.window.ClientWindowFrames"))
+            method.isAccessible = true
+            hook(method) { chain ->
+                val attrs = chain.args[0] as? android.view.WindowManager.LayoutParams
+                if (attrs != null && (attrs.type == 2005 || attrs.type == 2006)) {
+                    // 1) Force ALWAYS mode → skips the cutout-clipping branch entirely
+                    val saved = attrs.layoutInDisplayCutoutMode
+                    attrs.layoutInDisplayCutoutMode = 3
+                    // 2) Replace windowBounds with full display bounds — the
+                    //    window's config bounds may already be clipped to 809px
+                    //    (stale parent frame feedback), while InsetsState's
+                    //    displayFrame is always mUnrestricted = [0,0][1208,1392]
+                    val state = chain.args[1]
+                    val fullBounds = state?.callMethod("getDisplayFrame") as? Rect
+                    val savedBounds = chain.args[3] as? Rect
+                    if (fullBounds != null && !fullBounds.isEmpty) {
+                        chain.args[3] = fullBounds
+                    }
+                    runWithCleanup({
+                        attrs.layoutInDisplayCutoutMode = saved
+                        if (fullBounds != null && !fullBounds.isEmpty) {
+                            chain.args[3] = savedBounds
+                        }
+                    }) {
+                        chain.proceed()
+                    }
+                } else {
+                    chain.proceed()
+                }
+            }
+            log("CutoutHook: ✓ computeFrames — toast cutout clipping disabled")
+        }.onFailure { log("CutoutHook: toast layout clipping hook failed", it) }
     }
 
     /**
@@ -86,7 +150,7 @@ object CutoutHook : BaseHook() {
                 Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!,
                 Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!,
                 Int::class.javaPrimitiveType!!, Long::class.javaPrimitiveType!!,
-                classLoader.loadClass("android.view.ClientWindowFrames"),
+                classLoader.loadClass("android.window.ClientWindowFrames"),
                 classLoader.loadClass("android.util.MergedConfiguration"),
                 classLoader.loadClass("android.view.SurfaceControl"),
                 classLoader.loadClass("android.view.InsetsState"),
